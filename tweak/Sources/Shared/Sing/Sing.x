@@ -355,7 +355,7 @@ static void updateSpatial(void) {
 }
 
 BOOL SGSingSpatialAvailable(void) {
-    return SGSingOSSupported() && SGSingDeviceSupported() && SGHeadGesturesAvailable();
+    return SGSingOSSupported() && SGHeadGesturesAvailable();
 }
 
 BOOL SGSingSpatial(void) {
@@ -513,13 +513,12 @@ void SGSetSingIgnoresHeat(BOOL ignores) {
 
 NSString *SGSingMissing(void) {
     if (!SGSingOSSupported()) return [NSString stringWithFormat:@"Karaoke needs iOS 18, the first its voice model runs on. This iPhone has iOS %@.", UIDevice.currentDevice.systemVersion];
-    if (!SGSingDeviceSupported()) return @"Karaoke needs an iPhone with 6 GB of memory or more, which the voice model was built for. This one has less.";
     if (SGSingModelCurrentState() != SGSingModelReady) return [NSString stringWithFormat:@"Karaoke needs its voice model, which is downloaded from Mod Settings > Karaoke (%@).", SGSingModelSizeText()];
     return nil;
 }
 
 SGSingState SGSingCurrentState(void) {
-    if (!SGSingOSSupported() || !SGSingDeviceSupported()) return SGSingStateUnavailable;
+    if (!SGSingOSSupported()) return SGSingStateUnavailable;
     SGSingModelState model = SGSingModelCurrentState();
     if (model == SGSingModelDownloading) return SGSingStateDownloading;
     if (model != SGSingModelReady) return SGSingStateNoModel;

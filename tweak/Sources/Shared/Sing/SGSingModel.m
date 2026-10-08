@@ -521,11 +521,3 @@ BOOL SGSingOSSupported(void) {
     if (@available(iOS 18.0, *)) return YES;
     return NO;
 }
-
-// The model is 209 MB of weights, held while Sing is on beside Spotify's own memory (about 1.07 GB resident with its
-// CPU copy warm on an iPhone 15 Pro): an iPhone with less than 6 GB (which report a little under 6) would have Spotify
-// closed under it.
-// ponytail: a memory floor stands in for a list of phones; measure on a 6 GB phone and a 4 GB one to place it.
-BOOL SGSingDeviceSupported(void) {
-    return NSProcessInfo.processInfo.physicalMemory >= 5ull * 1000 * 1000 * 1000;
-}

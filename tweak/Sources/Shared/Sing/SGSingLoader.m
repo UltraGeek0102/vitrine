@@ -12,6 +12,10 @@ double SGSingLoaderCPUDeadline = 120, SGSingLoaderNeuralDeadline = 600, SGSingLo
 // A CPU copy loads beside an abandoned load still out (or again after a memory warning) only with this much left: a
 // second copy took 1.07-1.15 GB more of the process's footprint on an M4.
 static const unsigned long long kCopyRoom = 1600ull * 1000 * 1000;
+// The first CPU copy loads only with this much left, in place of a floor on the iPhone's memory. On an iPhone 15 Pro both
+// copies warm added 0.1 GB of footprint (0.20 to 0.30 GB); the weights are mapped from disk and counted only as resident.
+// 1 GB leaves the Neural Engine copy its 0.5 GB after the CPU's.
+static const unsigned long long kFirstRoom = 1000ull * 1000 * 1000;
 // The Neural Engine copy loads beside the CPU's only with this much left. On an iPhone 15 Pro it added 0.06-0.1 GB of
 // footprint (resident 1.06 to 1.13 GB); 0.5 GB is that five times over, for its first compile, which was not measured
 // apart, and for Spotify's own memory to grow without iOS closing it for a copy Sing can do without.
@@ -181,9 +185,11 @@ BOOL SGSingLoaderPrepareNeural(NSURL *url, void (^done)(BOOL loaded)) {
 }
 
 static void startCPU(void) {
-    if (sg_outstanding && !roomFor(kCopyRoom)) {
+    if (!roomFor(sg_outstanding ? kCopyRoom : kFirstRoom)) {
         sg_state = SGSingLoaderFailed;
-        sg_error = [NSString stringWithFormat:@"A load abandoned earlier still holds memory, and %@. Close Spotify and open it again to load the voice model.", memoryText()];
+        sg_error = sg_outstanding
+            ? [NSString stringWithFormat:@"A load abandoned earlier still holds memory, and %@. Close Spotify and open it again to load the voice model.", memoryText()]
+            : [NSString stringWithFormat:@"iOS leaves Spotify too little memory for the voice model: %@, and it needs %.1f GB. Closing Spotify and opening it again can free some.", memoryText(), kFirstRoom / 1e9];
         SGLog(@"sing: no new load: %@", sg_error);
         changed();
         return;

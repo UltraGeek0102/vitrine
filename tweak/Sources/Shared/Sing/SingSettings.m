@@ -9,6 +9,14 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Sing.h"
+#import <sys/utsname.h>
+
+// Chips before the A14 (the iPhone XS, XR, 11 and SE 2: iPhone11,x and iPhone12,x) are untested and may not keep up.
+static BOOL untestedChip(void) {
+    struct utsname name;
+    int major = 0;
+    return uname(&name) == 0 && sscanf(name.machine, "iPhone%d,", &major) == 1 && major < 13;
+}
 
 UIView *SGSingCardView(void);   // SGSingCard.m
 
@@ -46,7 +54,7 @@ static SGSingModelState rowState(void) {
 }
 
 static NSString *modelValue(void) {
-    if (!SGSingOSSupported() || !SGSingDeviceSupported()) return @"Unavailable";
+    if (!SGSingOSSupported()) return @"Unavailable";
     BOOL update = SGSingModelUpdateAvailable();
     switch (rowState()) {
         case SGSingModelDownloading:
@@ -65,7 +73,7 @@ static NSString *modelValue(void) {
 }
 
 static void modelTapped(UITableViewController *page) {
-    if (!SGSingOSSupported() || !SGSingDeviceSupported()) {
+    if (!SGSingOSSupported()) {
         tell(@"Voice model", SGSingMissing());
         return;
     }
@@ -76,6 +84,7 @@ static void modelTapped(UITableViewController *page) {
                                  SGSingModelError() ? [NSString stringWithFormat:@"The last try failed: %@\n\n", SGSingModelError()] : @"",
                                  update ? @"The new voice model runs on the Neural Engine, faster and cooler, and Karaoke keeps the one it has until it is in. " : @"",
                                  SGSingModelSizeText()];
+            if (untestedChip()) message = [message stringByAppendingString:@"\n\nKaraoke is tested on the iPhone 15 Pro. On iPhones older than the iPhone 12 it may not keep up."];
             NSString *title = SGSingModelPausedBytes() ? (update ? @"Carry on with the update?" : @"Carry on with the download?")
                                                        : (update ? @"Download the update?" : @"Download the voice model?");
             ask(title, message, @"Download", NO, ^{ SGSingDownloadModel(); });

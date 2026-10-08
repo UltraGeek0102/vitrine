@@ -151,6 +151,5 @@ NSString *SGSingModelInUseSizeText(void);
 // is in, logging the space freed; from any thread, at launch and as the download ends.
 void SGSingRemoveOldModel(void);
 NSArray<NSString *> *SGSingComputeUnitNames(void);
-// Whether this OS can load the model (iOS 18) and this iPhone was built to run it.
+// Whether this OS can load the model (iOS 18). Memory is checked as the model loads (SGSingLoader.m).
 BOOL SGSingOSSupported(void);
-BOOL SGSingDeviceSupported(void);
