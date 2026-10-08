@@ -5,8 +5,10 @@ on:
     inputs:
       ipa_url:
         description: "Direct link to a decrypted Spotify IPA"
+        default: "https://files.catbox.moe/a81ziv.ipa"
         required: true
         type: string
+        
       upload_method:
         description: "Where to put the result"
         default: artifacts
