@@ -82,6 +82,8 @@ typedef NS_ENUM(NSUInteger, SGKaraokeAlign) {
 @property (nonatomic, strong) SGKaraokeLine *pronunciation;
 // The line in another language, the backing's words with it; nil where the source has none.
 @property (nonatomic, copy) NSString *translation;
+// The translation came from a translator of the lyrics' menu (LyricsTranslation), not from the lyrics' source.
+@property (nonatomic) BOOL translationMade;
 @end
 
 // The line as one string, a space between the words that are not joined.

@@ -196,6 +196,17 @@ static void askForKey(void) {
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
+NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";
+
+SGModRow *SGTranslateEverySongRow(void) {
+    SGModRow *row = SGOptionRow(@"Translate any song", @"The lyrics' translate menu for songs that already read as your language",
+                                SGKeyLyricsTranslateEverySong);
+    row.changed = ^(BOOL on) {
+        [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
+    };
+    return row;
+}
+
 SGModRow *SGGeminiKeyRow(void) {
     return SGStatActionRow(@"Gemini API key", @"Translate any song from the lyrics' corner menu",
                            ^NSString *{ return SGGeminiKeySet() ? @"Set" : @"Off"; }, ^{ askForKey(); });

@@ -26,20 +26,22 @@ static NSArray<NSURL *> *files(void) {
                                                           options:NSDirectoryEnumerationSkipsHiddenFiles error:nil] ?: @[];
 }
 
-BOOL SGLyricsApplySavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
-    if (!track.length || !language.length || !lines.count) return NO;
+void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
+    if (!track.length || !language.length || !lines.count) return;
     NSData *data = [NSData dataWithContentsOfURL:fileFor(track, language)];
-    NSDictionary *saved = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-    if (![saved isKindOfClass:NSDictionary.class]) return NO;
-    BOOL applied = NO;
+    id saved = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if (![saved isKindOfClass:NSDictionary.class]) saved = nil;
     for (SGKaraokeLine *line in lines) {
-        if (line.translation.length) continue;
         id translation = saved[SGKaraokeLineText(line) ?: @""];
-        if (![translation isKindOfClass:NSString.class] || ![translation length]) continue;
-        line.translation = translation;
-        applied = YES;
+        BOOL has = [translation isKindOfClass:NSString.class] && [translation length];
+        if (line.translationMade && !has) {
+            line.translation = nil;
+            line.translationMade = NO;
+        } else if (!line.translation.length && has) {
+            line.translation = translation;
+            line.translationMade = YES;
+        }
     }
-    return applied;
 }
 
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
@@ -92,6 +94,7 @@ SGModRow *SGSavedTranslationsRow(void) {
         [alert addAction:[UIAlertAction actionWithTitle:@"Delete" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
             [NSFileManager.defaultManager removeItemAtURL:folder() error:nil];
             SGLog(@"translation: saved translations deleted");
+            [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
         }]];
         [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
         [SGTopController() presentViewController:alert animated:YES completion:nil];

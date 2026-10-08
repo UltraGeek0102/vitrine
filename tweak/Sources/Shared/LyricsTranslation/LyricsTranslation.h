@@ -7,6 +7,14 @@
 
 BOOL SGGeminiKeySet(void);
 
+// Posted on the main thread when the saved translations are deleted or Translate any song changes: the lyrics
+// page syncs its song again and redraws.
+extern NSNotificationName const SGLyricsTranslationsDidChangeNotification;
+
+// On: the translate menu is offered for every song, not only those found in another language.
+#define SGKeyLyricsTranslateEverySong @"spotifyglass.lyrics.translateEverySong"
+SGModRow *SGTranslateEverySongRow(void);
+
 // One translation per line, in order, or nil and a message to show. Main queue. The same song in the
 // same language is asked once a launch.
 void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
@@ -39,8 +47,9 @@ SGModRow *SGGeminiKeyRow(void);
 @end
 
 // SavedTranslations.m: a song's translations kept on disk by track and language, matched to lines by their text.
-// Applying fills only lines with no translation and says whether any took one. Main thread.
-BOOL SGLyricsApplySavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
+// The saved ones are the truth for translations made here: syncing fills the lines with no translation from them,
+// and takes a made translation off a line that has none saved (after Delete). Main thread.
+void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
 // The Lyrics page's row: how many songs are kept, and a tap to delete them.
 SGModRow *SGSavedTranslationsRow(void);

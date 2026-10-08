@@ -1359,6 +1359,7 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionEndedNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGRLyricsTextDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGLyricsRomanisedDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationsChanged) name:SGLyricsTranslationsDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(lookChanged) name:SGRLyricsLookDidChangeNotification object:nil];
     // A locked phone leaves the card in its window, so the link has to be put down by the app going
     // away rather than by the view going: see scheduleLink.
@@ -1724,14 +1725,36 @@ static NSArray<NSString *> *textsOf(NSArray<SGKaraokeLine *> *lines) {
     return texts;
 }
 
-// Whether the song's words are mostly in a language other than `language`. A song too short to tell counts as one.
+// Whether a song is in a language other than `language`, line by line: one distinct line in five, or two lines in
+// another script (Hangul, kana, Han among English, for K-pop with only a verse in Korean), with the recognizer at
+// least 80% sure of each. A chorus sung eight times weighs as one line. The whole song's guess is not asked: short
+// lines sway it (it reads Havana, all "ooh na-na", as Dutch), and an unsure line counts neither way. A song with no
+// line it is sure of counts as foreign, too little to tell.
 static BOOL inAnotherLanguage(NSArray<SGKaraokeLine *> *lines, NSString *language) {
-    NSMutableString *words = [NSMutableString string];
-    for (SGKaraokeLine *line in lines) if (hasWords(line)) [words appendFormat:@"%@\n", SGKaraokeLineText(line)];
-    NSString *found = [NLLanguageRecognizer dominantLanguageForString:words];
-    if (!found.length || [found isEqualToString:NLLanguageUndetermined]) return YES;
-    NSString *(^code)(NSString *) = ^NSString *(NSString *tag) { return [tag componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"-_"]].firstObject.lowercaseString; };
-    return ![code(found) isEqualToString:code(language)];
+    NSString *(^code)(NSString *) = ^NSString *(NSString *tag) {
+        return [tag componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"-_"]].firstObject.lowercaseString;
+    };
+    NSString *target = code(language);
+    NSString *targetScript = [NSOrthography defaultOrthographyForLanguage:language].dominantScript;
+    NSUInteger distinct = 0, sure = 0, foreign = 0, otherScript = 0;
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    NLLanguageRecognizer *recognizer = [NLLanguageRecognizer new];
+    for (SGKaraokeLine *line in lines) {
+        NSString *text = hasWords(line) ? SGKaraokeLineText(line).lowercaseString : nil;
+        if (!text.length || [seen containsObject:text]) continue;
+        [seen addObject:text];
+        distinct++;
+        [recognizer reset];
+        [recognizer processString:text];
+        NSDictionary<NLLanguage, NSNumber *> *guess = [recognizer languageHypothesesWithMaximum:1];
+        NLLanguage found = guess.allKeys.firstObject;
+        if (!found || guess[found].doubleValue < 0.8) continue;
+        sure++;
+        if ([code(found) isEqualToString:target]) continue;
+        foreign++;
+        if (![[NSOrthography defaultOrthographyForLanguage:found].dominantScript isEqualToString:targetScript]) otherScript++;
+    }
+    return !sure || foreign * 5 >= MAX(distinct, 5) || otherScript >= 2;
 }
 
 // Whether a line with words is still without a translation.
@@ -1750,7 +1773,7 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
     _breakCount = 0;
     _hasSpoken = _hasTranslation = _untranslated = NO;
     _plain = SGKaraokeLinesTiming(_lines) == SGKaraokeTimingNone;
-    if (!_sample) SGLyricsApplySavedTranslation(_track, SGLyricsGeminiLanguage(), _lines);
+    if (!_sample) SGLyricsSyncSavedTranslation(_track, SGLyricsGeminiLanguage(), _lines);
     _foreign = inAnotherLanguage(_lines, SGLyricsGeminiLanguage());
     NSInteger sungTo = 0;   // the top of the song counts as where the singing before the first line ends
     for (NSUInteger i = 0; i < count; i++) {
@@ -1847,7 +1870,7 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
     BOOL gemini = SGGeminiKeySet(), onDevice = SGOnDeviceTranslation.translationAvailable;
     BOOL intelligence = [SGOnDeviceTranslation appleIntelligenceAvailable:language];
     // A translator is offered only for a song in another language than the one it would translate into.
-    BOOL translatable = _foreign && _untranslated && (gemini || onDevice || intelligence);
+    BOOL translatable = (_foreign || SGHidden(SGKeyLyricsTranslateEverySong)) && _untranslated && (gemini || onDevice || intelligence);
     BOOL offered = _lines && !_sample && (_hasSpoken || _hasTranslation || translatable);
     if (!offered) {
         _extrasBox.hidden = YES;
@@ -1958,6 +1981,13 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
     });
 }
 
+// The saved translations deleted, or Translate any song switched: the song is synced again and redrawn.
+- (void)translationsChanged {
+    if (!_lines) return;
+    [self timeLines];
+    [self restyle];
+}
+
 // Each line still without a translation takes the one given for it, and translations are switched on so
 // they show. The lines may be another song's by now: they keep the translation, the page is left alone.
 - (void)takeTranslations:(NSArray<NSString *> *)translations into:(NSArray<SGKaraokeLine *> *)lines {
@@ -1965,6 +1995,7 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
     [lines enumerateObjectsUsingBlock:^(SGKaraokeLine *line, NSUInteger i, BOOL *stop) {
         if (i < translations.count && translations[i].length && !line.translation.length) {
             line.translation = translations[i];
+            line.translationMade = YES;
             took = YES;
         }
     }];

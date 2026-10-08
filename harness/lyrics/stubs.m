@@ -81,7 +81,8 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
 }
 @end
 // Nothing is kept between runs of the harness.
-BOOL SGLyricsApplySavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) { return NO; }
+void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
+NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
 
 // Line meanings: -title and -artist name the track Genius is searched for, and the setting's key

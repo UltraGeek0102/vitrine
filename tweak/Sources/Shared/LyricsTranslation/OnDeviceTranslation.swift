@@ -23,10 +23,26 @@ public final class SGOnDeviceTranslation: NSObject {
         Locale.current.localizedString(forIdentifier: language.minimalIdentifier) ?? language.minimalIdentifier
     }
 
-    // The song's language, from its words.
-    private static func sourceLanguage(_ lines: [String]) -> Locale.Language? {
+    // A line's language when the recognizer is sure of it; short lines ("yeah") guess wildly otherwise.
+    private static func languageOf(_ line: String) -> Locale.Language? {
         let recognizer = NLLanguageRecognizer()
-        recognizer.processString(lines.joined(separator: "\n"))
+        recognizer.processString(line)
+        guard let (found, chance) = recognizer.languageHypotheses(withMaximum: 1).first, chance >= 0.8 else { return nil }
+        return Locale.Language(identifier: found.rawValue)
+    }
+
+    // The language to translate from: the one most of the song's other-language lines are in, so a K-pop song
+    // half in English is Korean; else the whole song's.
+    private static func sourceLanguage(_ lines: [String], target: Locale.Language) -> Locale.Language? {
+        var counts: [String: (Locale.Language, Int)] = [:]
+        // Each line once, so a repeated chorus does not outvote the verses.
+        for line in Set(lines.map { $0.lowercased() }) where !line.isEmpty {
+            guard let language = languageOf(line), !same(language, target), let code = language.languageCode?.identifier else { continue }
+            counts[code] = (counts[code]?.0 ?? language, (counts[code]?.1 ?? 0) + 1)
+        }
+        if let most = counts.values.max(by: { $0.1 < $1.1 }) { return most.0 }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(Set(lines).joined(separator: "\n"))
         guard let found = recognizer.dominantLanguage, found != .undetermined else { return nil }
         return Locale.Language(identifier: found.rawValue)
     }
@@ -46,7 +62,7 @@ public final class SGOnDeviceTranslation: NSObject {
     @objc public static func translate(_ lines: [String], to languageTag: String, done: @escaping ([String]?, String?) -> Void) {
         guard #available(iOS 26.0, *) else { return finish(done, nil, "Translating on this iPhone needs iOS 26.") }
         let target = Locale.Language(identifier: languageTag)
-        guard let source = sourceLanguage(lines) else { return finish(done, nil, "The song's language could not be told from its words.") }
+        guard let source = sourceLanguage(lines, target: target) else { return finish(done, nil, "The song's language could not be told from its words.") }
         if same(source, target) { return finish(done, nil, "The song is already in \(name(target)).") }
         Task {
             switch await LanguageAvailability().status(from: source, to: target) {
@@ -59,8 +75,9 @@ public final class SGOnDeviceTranslation: NSObject {
             @unknown default:
                 break
             }
+            // Lines already in the target language are left as they are, not run through the other language.
             let requests = lines.enumerated().compactMap { index, line in
-                line.trimmingCharacters(in: .whitespaces).isEmpty || line == "♪" ? nil
+                line.trimmingCharacters(in: .whitespaces).isEmpty || line == "♪" || languageOf(line).map({ same($0, target) }) == true ? nil
                     : TranslationSession.Request(sourceText: line, clientIdentifier: String(index))
             }
             let started = Date()
