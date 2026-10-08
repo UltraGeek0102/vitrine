@@ -12,7 +12,7 @@
 // syllable continues a word rather than starting one.
 //
 // The head can carry the lines again in two more ways, each keyed to its line by the itunes:key of
-// the <p>: Apple's translations, as text, and its pronunciations (transliterations), spelled in the
+// the <p> (lrc:key in lrc.red's copies): Apple's translations, as text, and its pronunciations (transliterations), spelled in the
 // Latin alphabet and timed by spans that start with the words of the line they spell out.
 //
 // <iTunesMetadata><translations><translation xml:lang="en-US"><text for="L1">I'm so drunk …
@@ -128,7 +128,7 @@ typedef NS_ENUM(NSInteger, SGTTMLPart) {
         _lineStart = msOfClock(attributes[@"begin"]);
         _lineEnd = msOfClock(attributes[@"end"]);
         _voice = attributes[@"ttm:agent"] ?: attributes[@"agent"];
-        _key = attributes[@"itunes:key"] ?: attributes[@"key"];
+        _key = attributes[@"itunes:key"] ?: attributes[@"lrc:key"] ?: attributes[@"key"];
         return;
     }
     BOOL translation = [element isEqualToString:@"translation"];

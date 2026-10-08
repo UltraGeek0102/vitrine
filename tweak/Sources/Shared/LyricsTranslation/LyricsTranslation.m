@@ -4,6 +4,8 @@
 #import "Settings/SGPageStyle.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
+#import "Shared/LocalFiles/LocalFiles.h"
+#import "Headers/SPTPlayer.h"
 #import "LyricsTranslation.h"
 
 // gemini-flash-latest follows each Flash release; Google gives two weeks' notice of a breaking change.
@@ -42,6 +44,15 @@ BOOL SGGeminiKeySet(void) {
 }
 
 #pragma mark - asking
+
+NSString *SGLyricsSongName(NSString *trackID) {
+    NSDictionary *local = trackID ? SGLocalFileInfo(trackID) : nil;
+    SPTPlayerTrack *track = trackID && !local ? SGKaraokeTrackFor(trackID) : nil;
+    NSString *title = local ? local[@"title"] : track.trackTitle, *artist = local ? local[@"artist"] : track.artistName;
+    if (![title isKindOfClass:NSString.class] || !title.length) return nil;
+    return [artist isKindOfClass:NSString.class] && artist.length ? [NSString stringWithFormat:@"\u201C%@\u201D by %@", title, artist]
+                                                                     : [NSString stringWithFormat:@"\u201C%@\u201D", title];
+}
 
 NSString *SGLyricsGeminiLanguage(void) {
     return SGLyricsTranslationLanguage() ?: NSLocale.preferredLanguages.firstObject ?: @"en";

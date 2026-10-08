@@ -99,6 +99,10 @@ BOOL SGSystemMusicHapticsOn(void);
 void SGSetSystemMusicHapticsOn(BOOL on);
 extern NSNotificationName const SGSystemMusicHapticsChangedNotification;
 
+// A Spotify track URI's ISRC from Spotify's own metadata (SystemMusicHaptics.x), nil for none, on the main queue.
+// Kept for the last 100 tracks; `tries` asks again 4 s apart when Spotify does not answer.
+void SGSpotifyISRC(NSString *uri, NSUInteger tries, void (^done)(NSString *isrc));
+
 // A strength key's percentage as a factor, 1 for 100%, kept within its range.
 double SGHapticsStrength(NSString *key);
 SGMusicFollows SGMusicHapticsFollows(void);

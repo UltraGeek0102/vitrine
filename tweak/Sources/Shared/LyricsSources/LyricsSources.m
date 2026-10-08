@@ -584,7 +584,7 @@ NSArray<NSString *> *SGLyricsTranslationLanguageNames(void) {
     NSLocale *english = [NSLocale localeWithLocaleIdentifier:@"en"];
     NSMutableArray<NSString *> *names = [NSMutableArray array];
     for (NSString *tag in SGLyricsTranslationLanguages()) {
-        [names addObject:tag.length ? [english localizedStringForLocaleIdentifier:tag] ?: tag : @"Any"];
+        [names addObject:tag.length ? [english localizedStringForLocaleIdentifier:tag] ?: tag : @"Any · iPhone's language"];
     }
     return names;
 }

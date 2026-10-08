@@ -54,6 +54,36 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ done(translations, nil); });
 }
 
+// -onDevice 1 / -intelligence 1: Translate on iPhone and Apple Intelligence are offered, each answering every
+// line with itself, marked.
+@interface SGOnDeviceTranslation : NSObject
+@end
+@implementation SGOnDeviceTranslation
++ (BOOL)translationAvailable { return [NSUserDefaults.standardUserDefaults boolForKey:@"onDevice"]; }
++ (BOOL)appleIntelligenceAvailable:(NSString *)languageTag { return [NSUserDefaults.standardUserDefaults boolForKey:@"intelligence"]; }
++ (void)answer:(NSArray<NSString *> *)lines as:(NSString *)mark done:(void (^)(NSArray<NSString *> *, NSString *))done {
+    NSMutableArray<NSString *> *out = [NSMutableArray array];
+    for (NSString *line in lines) [out addObject:line.length ? [mark stringByAppendingString:line] : @""];
+    dispatch_async(dispatch_get_main_queue(), ^{ done(out, nil); });
+}
++ (void)translate:(NSArray<NSString *> *)lines to:(NSString *)languageTag done:(void (^)(NSArray<NSString *> *, NSString *))done {
+    [self answer:lines as:@"iPhone: " done:done];
+}
+// A batch at a time, as the model works: the first half shows a second before the rest.
++ (void)translateWithAppleIntelligence:(NSArray<NSString *> *)lines to:(NSString *)languageTag song:(NSString *)song progress:(void (^)(NSArray<NSString *> *))progress
+                                  done:(void (^)(NSArray<NSString *> *, NSString *))done {
+    NSMutableArray<NSString *> *half = [NSMutableArray array];
+    [lines enumerateObjectsUsingBlock:^(NSString *line, NSUInteger i, BOOL *stop) {
+        [half addObject:i < lines.count / 2 && line.length ? [@"Intelligence: " stringByAppendingString:line] : @""];
+    }];
+    dispatch_async(dispatch_get_main_queue(), ^{ progress(half); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [self answer:lines as:@"Intelligence: " done:done]; });
+}
+@end
+// Nothing is kept between runs of the harness.
+BOOL SGLyricsApplySavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) { return NO; }
+void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
+
 // Line meanings: -title and -artist name the track Genius is searched for, and the setting's key
 // (-spotifyglass.lyricsMeanings 3) turns them on.
 @interface SGHarnessTrack : NSObject
@@ -122,3 +152,5 @@ void SGKaraokeSeek(NSInteger ms) {
         SGHarnessStartClock(ms, sg_rate, -1, 0);
     });
 }
+// "“Title” by Artist" the translators are told.
+NSString *SGLyricsSongName(NSString *trackID) { return @"“Sample” by Harness"; }

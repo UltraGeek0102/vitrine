@@ -119,7 +119,7 @@ static UIViewController *lyricsPage(void) {
                 SGSwitchRow(@"Hide the controls", @"A few seconds after the last touch, the lyrics take the whole player", SGRKeyLyricsAutoHide),
                 SGSwitchRow(@"Landscape lyrics", @"Turn the phone with the lyrics open", SGRKeyLyricsLandscape)]),
             timing,
-            SGSection(@"Translation", @[SGLyricsTranslationLanguageRow(), SGGeminiKeyRow()]),
+            SGSection(@"Translation", @[SGLyricsTranslationLanguageRow(), SGGeminiKeyRow(), SGSavedTranslationsRow()]),
             SGSection(nil, @[SGLyricsMeaningsRow()]),
         ]];
     } else {

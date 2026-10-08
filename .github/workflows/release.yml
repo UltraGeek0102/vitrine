@@ -1,6 +1,7 @@
 # Every push to main updates one release PR (version.txt and CHANGELOG.md from the feat:/fix:
-# commits since the last release). Merging it tags vX.Y.Z and makes the GitHub Release, and the
-# second job builds the tweak to check that the release compiles. Nothing is attached: a .deb injected by hand
+# commits since the last release). Merging it tags vX.Y.Z and makes the GitHub Release. The second job
+# builds the tweak on every push, with the Xcode build-ipa.yml uses, so a change that compiles only with a
+# newer SDK than that is caught before a release is cut from it. Nothing is attached: a .deb injected by hand
 # misses the app changes the redesign needs, so people build the full IPA (README). No IPA is built here.
 name: Release
 
@@ -23,8 +24,6 @@ jobs:
         id: release
 
   build:
-    needs: release-please
-    if: needs.release-please.outputs.created == 'true'
     runs-on: macos-latest
     env:
       THEOS: ${{ github.workspace }}/theos

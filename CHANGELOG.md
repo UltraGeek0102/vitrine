@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.0.0-beta.7](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-10-08)
+
+
+### Fixes
+
+* the tweak compiles with Xcode 26 again ([cd8b70f](https://github.com/My-Name-Is-Jeff/vitrine/commit/cd8b70fab5220379c3a882b4340d46fe984be7b3))
+
+## [1.0.0-beta.6](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.5...v1.0.0-beta.6) (2026-10-08)
+
+
+### Features
+
+* Apple Intelligence translates each batch knowing the lines before it ([eef2591](https://github.com/My-Name-Is-Jeff/vitrine/commit/eef25912738fe2f47f1589686701816a5cc8f06c))
+* BiniLyrics finds the exact recording by its ISRC ([15a36f8](https://github.com/My-Name-Is-Jeff/vitrine/commit/15a36f8ee1712fd253cde7a117af5bf891a958b9))
+* Karaoke runs on any iPhone with iOS 18 that has enough free memory when the model loads ([37abd95](https://github.com/My-Name-Is-Jeff/vitrine/commit/37abd95adfff6c720a1c3fab7ffc5313565abf05))
+* lyrics translate on the iPhone, with Apple's Translate or Apple Intelligence ([86065ee](https://github.com/My-Name-Is-Jeff/vitrine/commit/86065ee4c13981178f67149c6c5a8ce598057c1f))
+* translations are saved, and Apple Intelligence shows each batch as it comes ([d59b64e](https://github.com/My-Name-Is-Jeff/vitrine/commit/d59b64edd0b84a35dafe539472a8c31c899ff300))
+
+
+### Fixes
+
+* an Apple Intelligence translation keeps its finished batches ([59fea3d](https://github.com/My-Name-Is-Jeff/vitrine/commit/59fea3d1c504f38d16c154920846b08d822911f1))
+* an artist's meaning bubble stays on screen beside a second singer's line ([4123378](https://github.com/My-Name-Is-Jeff/vitrine/commit/41233783d51f30275a94ccf156b10aadb0418798))
+* Apple Intelligence translations finish, and Translate on iPhone tries twice ([2685a35](https://github.com/My-Name-Is-Jeff/vitrine/commit/2685a35c062b3b4f686538da9130e9d0b02b4066))
+* BiniLyrics lyrics keep Apple's translations and pronunciations ([408cbac](https://github.com/My-Name-Is-Jeff/vitrine/commit/408cbac10b00e792e1719421606c61c09de6512d))
+* the translate menu is offered only for songs in another language ([e276aa2](https://github.com/My-Name-Is-Jeff/vitrine/commit/e276aa2c10a4f085e4d3fcb95f61b600585c45cc))
+* the Translation language choice Any says it means the iPhone's language ([500e023](https://github.com/My-Name-Is-Jeff/vitrine/commit/500e023a61439ea2adbea5c6dfb737a9a944edde))
+
 ## [1.0.0-beta.5](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-10-08)
 
 

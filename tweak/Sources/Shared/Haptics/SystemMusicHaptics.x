@@ -79,7 +79,7 @@ static void askSpotify(NSString *uri, NSUInteger triesLeft, void (^done)(NSStrin
                     done(isrc);
                     return;
                 }
-                SGLog(@"music haptics: Spotify's metadata for %@ not answered (%ld, %@), %lu tries left", uri, (long)status,
+                SGLog(@"isrc: Spotify's metadata for %@ not answered (%ld, %@), %lu tries left", uri, (long)status,
                       error.localizedDescription, (unsigned long)triesLeft - 1);
                 if (triesLeft <= 1) {
                     done(nil);
@@ -93,13 +93,13 @@ static void askSpotify(NSString *uri, NSUInteger triesLeft, void (^done)(NSStrin
     });
 }
 
-static void spotifyISRC(NSString *uri, void (^done)(NSString *isrc)) {
+void SGSpotifyISRC(NSString *uri, NSUInteger tries, void (^done)(NSString *isrc)) {
     id kept = [sg_isrcs objectForKey:uri];
     if (kept) {
         done(kept == NSNull.null ? nil : kept);
         return;
     }
-    askSpotify(uri, kSpotifyTries, done);
+    askSpotify(uri, MAX(tries, 1), done);
 }
 
 #pragma mark - iOS
@@ -206,7 +206,7 @@ API_AVAILABLE(ios(18.0))
     id length = state.track.metadata[@"duration"];
     double ms = [length respondsToSelector:@selector(doubleValue)] && [length doubleValue] > 0 ? [length doubleValue] : state.duration * 1000;
     self.phase = SGNativeChecking;
-    spotifyISRC(track, ^(NSString *isrc) {
+    SGSpotifyISRC(track, kSpotifyTries, ^(NSString *isrc) {
         if (revision != self->_revision) return;
         if (!isrc) {
             self.phase = SGNativeUnavailable;
@@ -273,9 +273,9 @@ API_AVAILABLE(ios(18.0))
 %ctor {
     // MusicHaptics.x's constructor moves it too, but may run after this one.
     SGMigrateMusicHaptics();
+    sg_isrcs = [NSCache new];
+    sg_isrcs.countLimit = kKeptISRCs;
     if (@available(iOS 18.0, *)) {
-        sg_isrcs = [NSCache new];
-        sg_isrcs.countLimit = kKeptISRCs;
         static SGNativeMusicHaptics *native;
         native = [SGNativeMusicHaptics new];
         SGAddPlayerStateObserver(native);

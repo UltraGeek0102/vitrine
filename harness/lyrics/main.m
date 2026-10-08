@@ -23,6 +23,8 @@
 //                  Musixmatch's community translations come in after the lines on the phone
 //   -gemini 1      a Gemini key is set, so the menu offers Translate with Gemini (stubs.m answers it)
 //   -geminiDelay S stubs.m's Gemini answers S seconds later instead of at once
+//   -onDevice 1    Translate on iPhone is offered (stubs.m answers it)
+//   -intelligence 1 Translate with Apple Intelligence is offered (stubs.m answers it)
 //   -seekLag S     the player reports a seek S seconds after it is asked for (stubs.m)
 //   -check 1       asserts the view's fixes (see runChecks), prints PASS and FAIL lines and quits with the
 //                  number of failures; run it with -song duet -at 20000 -gemini 1 -geminiDelay 1 -seekLag 0.4

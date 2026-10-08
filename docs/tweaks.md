@@ -103,8 +103,10 @@ Shared:
                   answer Spotify's requests and the mod's sources and its own requests stand aside
     LyricsSources/ the sources lyrics come from, asked in the order the Lyrics page puts them in and merged into the
                   best answer (LyricsSources.m, the list to drag in LyricsSourcesPage.m): Apple Music's TTML from
-                  BiniLyrics.m and Unison.m, read by SGTTML.m, which carries a second voice and the
-                  backing vocals, and in its head Apple's translation and its pronunciation of a line, the pronunciation
+                  BiniLyrics.m (now lrc.red: first the TTML filed under Spotify's ISRC for the track, from
+                  SGSpotifyISRC in Haptics/SystemMusicHaptics.x, else its search by name) and Unison.m, read by SGTTML.m,
+                  which carries a second voice and the backing vocals, and in its head Apple's translation and its
+                  pronunciation of a line, each keyed to the line by its itunes:key or lrc:key, the pronunciation
                   timed word by word (the translation taken in the Lyrics page's language); Musixmatch.m, matched by
                   Spotify's track id with an anonymous token, word timed where it has richsync; NetEase.m, word timing from yrc for what the others only line time; LrcLib.m, open and
                   keyless and timed by the line, the floor under the rest. SpicyLyrics.m, Spicy Lyrics' Developer Platform
@@ -126,9 +128,14 @@ Shared:
                   no translation of their own take Musixmatch's community translations (Musixmatch.m), whichever
                   source won, Spotify's own included: matched by the line's folded text, as copies kept in place of the
                   lines (KaraokeSource.x), which the view picks up
-    LyricsTranslation/ a song's lines translated by Gemini on the user's own key (Keychain), from the lyrics' corner
-                  menu, for the lines no source translated; the key's prompt and the menu item say the lyrics go to
-                  Google. The reply read and checked on the Mac against harness/lyrics-translation/
+    LyricsTranslation/ a song's lines translated from the lyrics' corner menu, for the lines no source translated, three
+                  ways, each its own item: on the iPhone by Apple's Translate (iOS 26, the song's language told by
+                  NaturalLanguage, both languages downloaded in the Translate app or the item says where to) and by Apple
+                  Intelligence's model (iOS 26 where it is on and speaks the language; permissive guardrails for changing
+                  the user's own text, 12 lines a session, greedy and capped at 60 tokens a line, exactly one string a line by a generation schema; Translate retried once, as its first ask can fail while it loads), both in
+                  OnDeviceTranslation.swift, the frameworks weak linked; and by Gemini on the user's own key (Keychain),
+                  whose prompt and menu item say the lyrics go to Google. The translate items show only for a song NaturalLanguage finds in another language than the Lyrics page's (or the iPhone's). Apple Intelligence's lines show and are saved a batch at a time, only lines without a translation are sent, and a batch it turns down is skipped (asking again sends only those lines). Every finished translation is kept by SavedTranslations.m in Caches/Vitrine/Translations, one JSON file a song and language mapping each line's text to its translation, the newest 200, applied when the song's lines are next shown; the Lyrics page's Saved translations row counts them and deletes them. Gemini's reply read and checked on the Mac
+                  against harness/lyrics-translation/
     LockScreenLyrics/ the line being sung in the system's now playing, and on iOS 26 the lyrics as the lock screen's
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
                   next one dimmed over the blurred cover, SGLyricsClip.m) written only when the lock screen asks for it,
