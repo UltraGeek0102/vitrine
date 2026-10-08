@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.5](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-10-08)
+
+
+### Features
+
+* Spotify 9.1.88 likely works, and its glass switch is pinned to the default ([f2fb18c](https://github.com/My-Name-Is-Jeff/vitrine/commit/f2fb18ccf21d22b51e3cb042a4d31d6bc8e066c1))
+
+
+### Fixes
+
+* an IPA build makes the flag table again when the Spotify version changes ([cdbbea9](https://github.com/My-Name-Is-Jeff/vitrine/commit/cdbbea99748c43e55980b09d061ae1086dab853a))
+
 ## [1.0.0-beta.4](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-10-08)
 
 
