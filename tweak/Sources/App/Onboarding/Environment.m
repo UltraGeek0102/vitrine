@@ -26,7 +26,7 @@ NSString *SGSpotifyVersion(void) {
 // says nothing, rather than "Spotify unknown".
 static BOOL otherVersion(void) {
     NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-    return [version isKindOfClass:NSString.class] && ![version isEqualToString:SGSpotifyMadeFor];
+    return [version isKindOfClass:NSString.class] && ![version isEqualToString:SGSpotifyMadeFor] && ![version isEqualToString:SGSpotifyLikelyWorks];
 }
 
 static SGProblem eevee(void) {
@@ -36,8 +36,8 @@ static SGProblem eevee(void) {
 
 static SGProblem version(void) {
     return @[[NSString stringWithFormat:@"Spotify %@ is not the version Vitrine is made for", SGSpotifyVersion()],
-             [NSString stringWithFormat:@"Vitrine is made for Spotify %@. On another version some of its changes find nothing to change, and some screens can look wrong or crash. Inject Vitrine into Spotify %@.",
-                 SGSpotifyMadeFor, SGSpotifyMadeFor]];
+             [NSString stringWithFormat:@"Vitrine is made for Spotify %@, and %@ likely works too. On another version some of its changes find nothing to change, and some screens can look wrong or crash. Inject Vitrine into Spotify %@ or %@.",
+                 SGSpotifyMadeFor, SGSpotifyLikelyWorks, SGSpotifyMadeFor, SGSpotifyLikelyWorks]];
 }
 
 // Installed without the app changes Vitrine's IPA build makes (scripts/pipeline.sh: plist/liquid-glass.plist and the

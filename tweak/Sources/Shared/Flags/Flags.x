@@ -32,9 +32,19 @@ static long intFor(NSString *key, long lower, long upper, long orig) {
     return value ? MAX(lower, MIN(upper, (long)[value longLongValue])) : orig;
 }
 
+// 9.1.88's switch over the system's own glass (default, force_enabled, force_disabled). Default leaves it to
+// Info.plist, where the IPA build turns glass on; a force_disabled from Spotify's servers would take the glass
+// off the redesign's bars. Pinned to default in both looks, after an override from the All flags page.
+static NSString *const kGlassOverride = @"ios-reprise-liquid-glass-override.mode";
+
 static id enumFor(NSString *key, id orig) {
     id value = forced(key);
-    return [value isKindOfClass:NSString.class] ? value : orig;
+    id result = [value isKindOfClass:NSString.class] ? value : orig;
+    static atomic_bool toldGlass;
+    if ([key isEqualToString:kGlassOverride] && !atomic_exchange(&toldGlass, true)) {
+        SGLog(@"flags: Spotify's own %@ is %@, handed %@", kGlassOverride, orig, result);
+    }
+    return result;
 }
 
 %hook _TtC22RemoteConfigurationSDK25ConfigurationProviderImpl
@@ -69,6 +79,7 @@ static id enumFor(NSString *key, id orig) {
 %end
 
 %ctor {
+    SGRegisterFlagForcer(NO, ^id(NSString *key) { return [key isEqualToString:kGlassOverride] ? @"default" : nil; }, nil);
     %init;
     SGRequireClasses(@[
         @"_TtC22RemoteConfigurationSDK25ConfigurationProviderImpl",

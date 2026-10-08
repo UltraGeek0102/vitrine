@@ -76,9 +76,11 @@ MOD_VERSION="$(cat "$ROOT/version.txt" 2>/dev/null || true)"
 OUT="${OUT:-$ROOT/out/vitrine-$MOD_VERSION.ipa}"
 echo "==> Vitrine $MOD_VERSION on Spotify $SPOTIFY_VERSION -> $OUT"
 
-# The flag table is generated rather than committed, so it always matches the IPA being built.
-if [ ! -f "$ROOT/tweak/Sources/Shared/Flags/SGFlagList.m" ]; then
-  echo "==> extracting the flag table (once, about 40 s)"
+# The flag table is generated rather than committed, so it always matches the IPA being built: again whenever
+# the Spotify it was read from (its first line) is not this one.
+FLAG_LIST="$ROOT/tweak/Sources/Shared/Flags/SGFlagList.m"
+if ! head -1 "$FLAG_LIST" 2>/dev/null | grep -qF "from Spotify $SPOTIFY_VERSION."; then
+  echo "==> extracting the flag table for Spotify $SPOTIFY_VERSION (about 40 s)"
   "$ROOT/scripts/extract-flags.py" "$IN"
 fi
 

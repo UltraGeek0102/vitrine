@@ -25,6 +25,7 @@ BOOL SGWhatsNewShowing(void);
 // seconds after Spotify comes up and behind the tour, What's new and the signing sheet, and kept as
 // warning rows at the top of Mod Settings while it lasts.
 #define SGSpotifyMadeFor @"9.1.78"   // the Spotify this build is made for, and its flag table read from
+#define SGSpotifyLikelyWorks @"9.1.88"   // a newer Spotify that ran cleanly in a short test: no warning for it
 @class SGModRow;
 // SGEeveeSpotifyInjected() is Shared/Lyrics/Lyrics.h's.
 NSString *SGSpotifyVersion(void);
