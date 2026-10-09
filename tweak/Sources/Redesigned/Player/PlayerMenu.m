@@ -2,25 +2,20 @@
 // queue in a row at its top, then the player's own items here, then More with the rest of Spotify's rows. The
 // player's items take over what Speed and pitch's block is on Spotify's sheet:
 //
-//     Speed, Pitch & Reverb   a submenu of three:
-//         Playback Speed      0.5× to 2× in the steps Podcasts offers, the current one checked
-//         Pitch               Pitch Follows Speed, then three semitones down to three up, Original between them
-//         Reverb              Off and a quarter at a time up to 100%, the audio effects' reverb
+//     Speed, Pitch & Reverb   opens the sliders in a popover from the ⋯ (SGPlayerShowSpeedPitchPanel): speed,
+//                             pitch, reverb and Pitch follows speed, as on Spotify's sheet (issue #14)
 //     Show Fluid Artwork, Show Animated Artwork, Show Visualizer
 //                             a button for each of the two the background is not, while it is one of the
 //                             three, named for what it switches to
 //
-// Each submenu says what it is set to under its name, so the menu reads as a settings summary without opening
-// anything. A public menu has no sliders, so the steps stand in for them: the sheet's block, with its finer
-// steps, is still what shows when the menu cannot open (ContextMenu.h). What the speed or the pitch is set to
-// outside the steps (from that block) is kept, said under the name, and checked nowhere.
+// The item says under its name what is not as Spotify plays it, so the menu reads as a settings summary.
 #import "Core/SGCore.h"
 #import "Redesigned/ContextMenu/ContextMenu.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Player.h"
 
-static const float kSemitonesShown = 3;
+static __weak UIView *sg_moreButton;   // the ⋯ the sliders' panel comes from
 
 static UIImage *symbol(NSString *name) {
     return [UIImage systemImageNamed:name];
@@ -44,77 +39,16 @@ static BOOL pitchFollowing(void) {
     return SGPlayerSpeedAllowed() && SGPlayerPitchFollowsSpeed() && SGPlayerSpeed() != 1;
 }
 
-static UIMenu *speedMenu(void) {
-    BOOL allowed = SGPlayerSpeedAllowed();
-    double current = SGPlayerSpeed();
-    NSMutableArray<UIMenuElement *> *choices = [NSMutableArray array];
-    for (NSNumber *step in @[@0.5, @0.75, @1, @1.25, @1.5, @1.75, @2]) {
-        UIAction *choice = [UIAction actionWithTitle:speedText(step.doubleValue) image:nil identifier:nil handler:^(UIAction *action) {
-            SGSetPlayerSpeed(step.doubleValue);
-        }];
-        choice.state = fabs(current - step.doubleValue) < 0.01 ? UIMenuElementStateOn : UIMenuElementStateOff;
-        if (!allowed) choice.attributes = UIMenuElementAttributesDisabled;
-        [choices addObject:choice];
-    }
-    UIMenu *menu = [UIMenu menuWithTitle:@"Playback Speed" image:symbol(@"gauge.with.dots.needle.67percent") identifier:nil options:0 children:choices];
-    menu.subtitle = allowed ? speedText(current) : @"Unavailable";
-    return menu;
-}
-
-static UIMenu *pitchMenu(void) {
-    BOOL available = SGPlayerPitchAvailable(), speedAllowed = SGPlayerSpeedAllowed(), follows = SGPlayerPitchFollowsSpeed();
-    BOOL following = pitchFollowing();
-    float current = SGPlayerPitch();
-
-    UIAction *follow = [UIAction actionWithTitle:@"Pitch Follows Speed" image:nil identifier:nil handler:^(UIAction *action) {
-        SGSetPlayerPitchFollowsSpeed(!follows);
-    }];
-    follow.state = follows ? UIMenuElementStateOn : UIMenuElementStateOff;
-    // Following needs the speed's unit, which the in place fallback does not have.
-    if (!speedAllowed) follow.attributes = UIMenuElementAttributesDisabled;
-
-    NSMutableArray<UIMenuElement *> *steps = [NSMutableArray array];
-    for (float semitones = kSemitonesShown; semitones >= -kSemitonesShown; semitones--) {
-        float chosen = semitones;
-        UIAction *step = [UIAction actionWithTitle:semitonesText(chosen) image:nil identifier:nil handler:^(UIAction *action) {
-            SGSetPlayerPitch(chosen);
-        }];
-        step.state = !following && current == chosen ? UIMenuElementStateOn : UIMenuElementStateOff;
-        if (!available || following) step.attributes = UIMenuElementAttributesDisabled;
-        [steps addObject:step];
-    }
-    UIMenu *menu = [UIMenu menuWithTitle:@"Pitch" image:symbol(@"tuningfork") identifier:nil options:0 children:@[
-        [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[follow]],
-        [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:steps],
-    ]];
-    menu.subtitle = !available ? @"Unavailable" : following ? @"Follows Speed" : semitonesText(current);
-    return menu;
-}
-
-static UIMenu *reverbMenu(void) {
-    float current = SGPlayerReverb();
-    NSMutableArray<UIMenuElement *> *choices = [NSMutableArray array];
-    for (NSNumber *amount in @[@0, @25, @50, @75, @100]) {
-        UIAction *choice = [UIAction actionWithTitle:amount.floatValue ? [NSString stringWithFormat:@"%@%%", amount] : @"Off" image:nil identifier:nil
-                                             handler:^(UIAction *action) { SGPlayerSetReverb(amount.floatValue); }];
-        choice.state = current == amount.floatValue ? UIMenuElementStateOn : UIMenuElementStateOff;
-        [choices addObject:choice];
-    }
-    UIMenu *menu = [UIMenu menuWithTitle:@"Reverb" image:symbol(@"building.columns") identifier:nil options:0 children:choices];
-    menu.subtitle = current > 0 ? [NSString stringWithFormat:@"%.0f%%", current] : @"Off";
-    return menu;
-}
-
-// The three under one item, which says what is not as Spotify plays it, or Normal.
-static UIMenu *soundMenu(void) {
+// One item for the three, which says what is not as Spotify plays it, or Normal.
+static UIAction *soundMenu(void) {
     NSMutableArray<NSString *> *changed = [NSMutableArray array];
     if (SGPlayerSpeedAllowed() && fabs(SGPlayerSpeed() - 1) >= 0.01) [changed addObject:speedText(SGPlayerSpeed())];
     if (SGPlayerPitchAvailable() && !pitchFollowing() && SGPlayerPitch() != 0) [changed addObject:semitonesText(SGPlayerPitch())];
     if (SGPlayerReverb() > 0) [changed addObject:[NSString stringWithFormat:@"Reverb %.0f%%", SGPlayerReverb()]];
-    UIMenu *menu = [UIMenu menuWithTitle:@"Speed, Pitch & Reverb" image:symbol(@"slider.horizontal.3") identifier:nil options:0
-                                children:@[speedMenu(), pitchMenu(), reverbMenu()]];
-    menu.subtitle = changed.count ? [changed componentsJoinedByString:@", "] : @"Normal";
-    return menu;
+    UIAction *open = [UIAction actionWithTitle:@"Speed, Pitch & Reverb" image:symbol(@"slider.horizontal.3") identifier:nil
+                                       handler:^(UIAction *action) { SGPlayerShowSpeedPitchPanel(sg_moreButton); }];
+    open.subtitle = changed.count ? [changed componentsJoinedByString:@", "] : @"Normal";
+    return open;
 }
 
 static NSArray<UIMenuElement *> *playerItems(void) {
@@ -145,5 +79,6 @@ static NSString *sheetKind(void) {
 }
 
 void SGRPlayerMenuWatch(UIView *button) {
+    sg_moreButton = button;
     SGRSystemMenuWatch(button, ^NSArray<UIMenuElement *> *{ return playerItems(); }, ^NSString *{ return sheetKind(); });
 }

@@ -32,6 +32,7 @@
 #import <CoreText/SFNTLayoutTypes.h>
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
+#import "Settings/SGPageStyle.h"
 #import "Shared/AudioEffects/AudioEffects.h"
 #import "Shared/Haptics/Haptics.h"
 #import "SpeedPitch.h"
@@ -95,6 +96,8 @@ static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey;
 @interface SGSpeedPitchView : UIView
 @property (nonatomic, weak) UITableView *table;
 @property (nonatomic) BOOL inFooter;
+// The sliders alone, always open, for the redesign's panel under the ⋯ (SGPlayerShowSpeedPitchPanel).
+@property (nonatomic) BOOL panelOnly;
 @end
 
 @implementation SGSpeedPitchView {
@@ -267,6 +270,13 @@ static void placeTick(UISlider *slider) {
          + (SGPlayerMenuOffersAnimatedArtwork() ? kRowHeight : 0);
 }
 
+// Set after init, which drew the values for the sheet's closed block: drawn again open.
+- (void)setPanelOnly:(BOOL)panelOnly {
+    _panelOnly = panelOnly;
+    [self showValues];
+    [self setNeedsLayout];
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat width = self.bounds.size.width, side = kSideMargin;
@@ -279,7 +289,9 @@ static void placeTick(UISlider *slider) {
     CGFloat summaryX = CGRectGetMaxX(_title.frame) + kGrid;
     _summary.frame = CGRectMake(summaryX, 0, MAX(0, CGRectGetMinX(_chevron.frame) - kGrid - summaryX), kRowHeight);
 
-    _panel.frame = CGRectMake(0, kRowHeight, width, 3 * kSliderBlockHeight + kSwitchRowHeight + kPanelBottom);
+    _row.hidden = self.panelOnly;
+    _animatedRow.hidden = self.panelOnly;
+    _panel.frame = CGRectMake(0, self.panelOnly ? kGrid : kRowHeight, width, 3 * kSliderBlockHeight + kSwitchRowHeight + kPanelBottom);
     CGFloat y = 0;
     for (NSArray<UIView *> *line in @[@[_speedName, _speedValue, _speed], @[_pitchName, _pitchValue, _pitch],
                                        @[_reverbName, _reverbValue, _reverb]]) {
@@ -388,8 +400,8 @@ static NSString *pitchText(float pitch) {
     _row.accessibilityLabel = changed.count ? [@"Speed and pitch, " stringByAppendingString:[changed componentsJoinedByString:@", "]] : @"Speed and pitch";
     _row.accessibilityValue = sg_open ? @"Expanded" : @"Collapsed";
     _chevron.transform = sg_open ? CGAffineTransformMakeRotation(M_PI) : CGAffineTransformIdentity;
-    _panel.alpha = sg_open ? 1 : 0;
-    _panel.accessibilityElementsHidden = !sg_open;
+    _panel.alpha = sg_open || self.panelOnly ? 1 : 0;
+    _panel.accessibilityElementsHidden = !sg_open && !self.panelOnly;
 }
 
 #pragma mark actions
@@ -508,6 +520,52 @@ static NSString *pitchText(float pitch) {
 }
 
 @end
+
+#pragma mark - the panel
+
+// A popover, so it takes the system's glass and closes on a tap outside it. On iPhone a popover becomes a
+// sheet unless its delegate says otherwise.
+@interface SGSpeedPitchPanel : UIViewController <UIPopoverPresentationControllerDelegate>
+@end
+
+@implementation SGSpeedPitchPanel
+- (void)loadView {
+    SGSpeedPitchView *block = [SGSpeedPitchView new];
+    block.panelOnly = YES;
+    self.view = block;
+}
+
+- (UIModalPresentationStyle)adaptivePresentationStyleForPresentationController:(UIPresentationController *)controller
+                                                               traitCollection:(UITraitCollection *)traits {
+    return UIModalPresentationNone;
+}
+@end
+
+void SGPlayerShowSpeedPitchPanel(UIView *from) {
+    if (!from.window) return;
+    SGSpeedPitchPanel *panel = [SGSpeedPitchPanel new];
+    panel.modalPresentationStyle = UIModalPresentationPopover;
+    panel.preferredContentSize = CGSizeMake(320, kGrid + 3 * kSliderBlockHeight + kSwitchRowHeight + kPanelBottom);
+    UIPopoverPresentationController *popover = panel.popoverPresentationController;
+    popover.sourceView = from;
+    popover.sourceRect = from.bounds;
+    popover.permittedArrowDirections = UIPopoverArrowDirectionUp | UIPopoverArrowDirectionDown;
+    popover.delegate = panel;
+    SGPresentDark(panel);
+    // Picked from the system menu, which is still going away: the panel waits for it.
+    __block int tries = 0;
+    __block void (^present)(void);
+    present = ^{
+        UIViewController *top = SGTopController();
+        if ((top.isBeingDismissed || top.isBeingPresented || top.transitionCoordinator) && ++tries < 20) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), present);
+            return;
+        }
+        present = nil;
+        [top presentViewController:panel animated:YES completion:nil];
+    };
+    dispatch_async(dispatch_get_main_queue(), present);
+}
 
 #pragma mark - the player's more button
 

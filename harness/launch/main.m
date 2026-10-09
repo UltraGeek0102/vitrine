@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
 
         NSUInteger forced = 0, wrong = 0;
         for (NSString *key in keys) {
-            id expected = SGFlagOverride(key) ?: (SGAdBlockForcesFlagOff(key) ? @NO : nil);
+            id expected = SGFlagOverride(key) ?: SGAdBlockForcedFlag(key);
             id got = SGForcedFlagValue(key);
             if (got) forced++;
             if (!(expected == got || [expected isEqual:got])) {

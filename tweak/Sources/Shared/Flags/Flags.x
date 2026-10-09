@@ -79,7 +79,12 @@ static id enumFor(NSString *key, id orig) {
 %end
 
 %ctor {
-    SGRegisterFlagForcer(NO, ^id(NSString *key) { return [key isEqualToString:kGlassOverride] ? @"default" : nil; }, nil);
+    // 9.1.90's switch to a Liquid Glass tab bar of Spotify's own, off by default. Both looks build on the tab bar
+    // as it is, so a server turning it on would pull them apart: pinned off.
+    SGRegisterFlagForcer(NO, ^id(NSString *key) {
+        if ([key isEqualToString:kGlassOverride]) return @"default";
+        return [key isEqualToString:@"ios-navigationui-tabbar-impl.is_liquid_glass_tab_bar_enabled"] ? @NO : nil;
+    }, nil);
     %init;
     SGRequireClasses(@[
         @"_TtC22RemoteConfigurationSDK25ConfigurationProviderImpl",

@@ -5,7 +5,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/iOS-000000?style=for-the-badge&logo=ios&logoColor=white" alt="iOS">
   <img src="https://img.shields.io/badge/Spotify-9.1.78-1ED760?style=for-the-badge&logo=spotify&logoColor=white" alt="Spotify 9.1.78">
-  <img src="https://img.shields.io/badge/9.1.88-likely%20works-555555?style=for-the-badge&logo=spotify&logoColor=white" alt="Spotify 9.1.88 likely works">
+  <img src="https://img.shields.io/badge/9.1.88-supported-555555?style=for-the-badge&logo=spotify&logoColor=white" alt="Spotify 9.1.88 supported">
   <img src="https://img.shields.io/badge/Objective--C-3A95E3?style=for-the-badge&logo=apple&logoColor=white" alt="Objective-C">
   <img src="https://img.shields.io/badge/GitHub_Actions-2671E5?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions">
   <img src="https://img.shields.io/badge/License-GPL_v3-blue?style=for-the-badge" alt="GPL-3.0">
@@ -31,8 +31,8 @@ decrypted IPA and signed with your own certificate.
 Vitrine is a fork of [spoti.pw](https://github.com/skopevoj/spoti.pw) by Vojtěch Škopek, taken from
 0.21.1 (commit `c790445`, 2026-09-23), the last version released under GPL-3.0, and modified since.
 
-Built and tested on **Spotify 9.1.78**. **Spotify 9.1.88** likely works too: it ran cleanly in a short test, with
-Karaoke, the lock screen lyrics, the Live Activity and the native look not yet checked on it, so report what breaks.
+Built and tested on **Spotify 9.1.78** and **Spotify 9.1.88**. **Spotify 9.1.90** likely works too: it ran cleanly in a
+short test of the redesign, so report what breaks.
 The mod hooks Spotify's own classes, which change between releases, so any other version may build and then break.
 
 | | |
@@ -47,7 +47,7 @@ to Spotify's own screens with everything else the mod adds on top. Both live in 
 
 ## Build it
 
-No IPA is distributed. Bring a decrypted **Spotify 9.1.78** IPA (or 9.1.88, see above); you get an unsigned
+No IPA is distributed. Bring a decrypted **Spotify 9.1.78** or **9.1.88** IPA (or 9.1.90, see above); you get an unsigned
 `vitrine-<mod version>.ipa` to sign with SideStore, Feather or any certificate signer. Releases have no `.deb`:
 injected by hand, the tweak alone misses the app changes the redesign needs (its glass tab bar), the Live
 Activity, Music Haptics in the background and Connect's local discovery, so build the IPA instead.

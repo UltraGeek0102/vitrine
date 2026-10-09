@@ -6,7 +6,7 @@
 // Tree (trees/clean/home/10.txt:3018-3051): FunkisViewController's view holds a 402x112 UIView around
 // Reprise_LiquidGlassKit LiquidGlass.GradientView (the scrim) and, at {0, 62}, an
 // ElementView<HomeHeaderElement> 402x50 holding HomeHeaderView > UIStackView {0, 8} 402x34 of two arranged
-// views: ListeningActivity_ElementsKit.AdaptiveFaceContainer {16, 0} 32x34 (the avatar,
+// views: ListeningActivity_ElementsKit.AdaptiveFaceContainer {16, 0} 32x34 (the avatar, an EncoreButton in 9.1.90,
 // id=Components.UI.SideDrawerButton) and LiquidGlass.LeadingFadeMaskView {48, 1} 354x32 around
 // Home_PillUIKit.PillScrollView.
 //
@@ -145,12 +145,23 @@ static void layoutHeader(UIViewController *page) {
     UIStackView *stack = sg_stack;
     vanish(sg_scrim);
 
+    // The avatar by its identifier, which both versions give it: 9.1.88 draws it in an AdaptiveFaceContainer,
+    // 9.1.90 in an Encore button around a listening-activity pulse. Taken by the class alone, 9.1.90's avatar
+    // was hidden with the pills.
     static Class faceClass;
     if (!faceClass) faceClass = NSClassFromString(@"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer");
     UIView *face = nil;
     for (UIView *part in stack.arrangedSubviews) {
-        if (faceClass && [part isKindOfClass:faceClass]) face = part;
+        BOOL avatar = [part.accessibilityIdentifier isEqualToString:@"Components.UI.SideDrawerButton"]
+                   || (faceClass && [part isKindOfClass:faceClass]);
+        if (avatar && !face) face = part;
         else vanish(part);
+    }
+    // Brought back if an earlier pass, or an earlier build, took it for a pill.
+    if (face.alpha == 0) {
+        face.alpha = 1;
+        face.userInteractionEnabled = YES;
+        face.accessibilityElementsHidden = NO;
     }
     if (stack.semanticContentAttribute != UISemanticContentAttributeForceRightToLeft) {
         stack.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft;

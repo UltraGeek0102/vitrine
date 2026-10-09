@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.0.0-beta.8](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.7...v1.0.0-beta.8) (2026-10-09)
+
+
+### Features
+
+* K-pop with a verse in Korean gets the translate menu, and any song can ([a74efe4](https://github.com/My-Name-Is-Jeff/vitrine/commit/a74efe48e2d09094ccd5b4d85b361da2203fcedb))
+* Karaoke's settings can hide the mic on the lyrics ([b424aa6](https://github.com/My-Name-Is-Jeff/vitrine/commit/b424aa642de5470da030638358fa4929ce953f5c))
+* Spotify 9.1.88 is supported, and 9.1.90 likely works ([f1fb6f7](https://github.com/My-Name-Is-Jeff/vitrine/commit/f1fb6f7798d920135f4a5456cd1e2e023c6fb7c0))
+
+
+### Fixes
+
+* Apple Intelligence translates whole songs, each line in its place ([b66ce15](https://github.com/My-Name-Is-Jeff/vitrine/commit/b66ce15f2be0b4c73c42441e863fb129237bb8af))
+* changing the speed no longer makes the scrubber and lyrics jump ([2bcd974](https://github.com/My-Name-Is-Jeff/vitrine/commit/2bcd974bd70281248acce886aed9c8fa13fc3c4d))
+* deleting saved translations and Translate any song act at once ([a276e5d](https://github.com/My-Name-Is-Jeff/vitrine/commit/a276e5d13b7b07c6fa813e0fe205d07dc6ba44be))
+* Hide ads sets more of Spotify's ad flags ([85a24d0](https://github.com/My-Name-Is-Jeff/vitrine/commit/85a24d0f9d1f86087a885cd2dc4b0dbde2e3ca5d))
+* shuffle and repeat work in radio and autoplay with Spoof Premium on ([49e4622](https://github.com/My-Name-Is-Jeff/vitrine/commit/49e462268c755ef1f287fce73244241c6f02f4f7))
+* Speed, Pitch & Reverb opens sliders from the player's ⋯ again ([9ca0541](https://github.com/My-Name-Is-Jeff/vitrine/commit/9ca0541e7252fd2470b2ed1b76070fa9b20d8207))
+* Spotify 9.1.90's own glass tab bar stays off in both looks ([72b5acf](https://github.com/My-Name-Is-Jeff/vitrine/commit/72b5acf3875c9bb1b1942d4550229879a65e4be8))
+* the app changes warning names what the install lacks, and its settings say so too ([84ad4be](https://github.com/My-Name-Is-Jeff/vitrine/commit/84ad4be502fc0f899b5cd61e4324025470118c51))
+* the profile avatar shows on the redesigned Home on Spotify 9.1.90 ([6ab5718](https://github.com/My-Name-Is-Jeff/vitrine/commit/6ab5718e3eb78ebf63f75a791e9daca6bf79ac52))
+* the translate menu shows for K-pop with little or romanized Korean ([f16f182](https://github.com/My-Name-Is-Jeff/vitrine/commit/f16f1827550202a0470325db01562f3963c9a5f2))
+* the translate menu tells songs in another language by their lines ([46cf87e](https://github.com/My-Name-Is-Jeff/vitrine/commit/46cf87ea83cdd960fe59ff28855ae5978242dee2))
+* Translate with Gemini gets through when Gemini is busy ([48b03e5](https://github.com/My-Name-Is-Jeff/vitrine/commit/48b03e57645724decd28d970766260927b1e2b63))
+
 ## [1.0.0-beta.7](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-10-08)
 
 

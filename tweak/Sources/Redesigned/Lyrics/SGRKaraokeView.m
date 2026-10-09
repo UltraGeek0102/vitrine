@@ -14,6 +14,7 @@
 #import "LyricsLook.h"
 #import "MeaningSheet.h"
 #import "SGRSingButton.h"
+#import "Shared/Sing/Sing.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Settings/SGPageStyle.h"
@@ -1352,7 +1353,9 @@ typedef struct {
     for (NSNotificationName name in @[UIContentSizeCategoryDidChangeNotification, UIAccessibilityDarkerSystemColorsStatusDidChangeNotification])
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(creditStyleChanged) name:name object:nil];
     _sing = [SGRSingButton new];
+    _sing.hidden = !SGEnabled(SGKeySingButton);
     [self addSubview:_sing];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(singButtonChanged) name:SGSingButtonDidChangeNotification object:nil];
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
     [self addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)]];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionNotification object:nil];
@@ -1366,6 +1369,11 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(scheduleLink) name:UIApplicationDidBecomeActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(scheduleLink) name:UIApplicationWillResignActiveNotification object:nil];
     return self;
+}
+
+// Karaoke's settings switched the mic off or on: hidden at once, Karaoke itself as it was.
+- (void)singButtonChanged {
+    _sing.hidden = !SGEnabled(SGKeySingButton);
 }
 
 - (void)refreshCreditStyle {
@@ -1725,11 +1733,40 @@ static NSArray<NSString *> *textsOf(NSArray<SGKaraokeLine *> *lines) {
     return texts;
 }
 
-// Whether a song is in a language other than `language`, line by line: one distinct line in five, or two lines in
-// another script (Hangul, kana, Han among English, for K-pop with only a verse in Korean), with the recognizer at
-// least 80% sure of each. A chorus sung eight times weighs as one line. The whole song's guess is not asked: short
-// lines sway it (it reads Havana, all "ooh na-na", as Dutch), and an unsure line counts neither way. A song with no
-// line it is sure of counts as foreign, too little to tell.
+// Letters outside the target's script, read from the characters: past Latin for a Latin-script language, Latin for
+// any other. A short Korean line or one mixed with English, which the recognizer is not sure of, still counts.
+static NSUInteger otherScriptLetters(NSString *text, BOOL latinTarget) {
+    __block NSUInteger count = 0;
+    [text enumerateSubstringsInRange:NSMakeRange(0, text.length) options:NSStringEnumerationByComposedCharacterSequences
+                          usingBlock:^(NSString *character, NSRange range, NSRange enclosing, BOOL *stop) {
+        UTF32Char c = 0;
+        if (![character getBytes:&c maxLength:sizeof(c) usedLength:NULL encoding:NSUTF32LittleEndianStringEncoding options:0
+                           range:NSMakeRange(0, character.length) remainingRange:NULL]) return;
+        if (![NSCharacterSet.letterCharacterSet longCharacterIsMember:c]) return;
+        BOOL latin = c < 0x250 || (c >= 0x1E00 && c < 0x1F00);
+        if (latin != latinTarget) count++;
+    }];
+    return count;
+}
+
+// Words spelled the way Korean is in Latin letters, with "eo" or "eu" (neol, geureon, eotteoke). Spicy Lyrics'
+// community syncs give some K-pop this way. Of twenty English songs checked, no line had two such words.
+static NSUInteger romanizedKoreanWords(NSString *text) {
+    NSUInteger count = 0;
+    for (NSString *word in [text componentsSeparatedByCharactersInSet:NSCharacterSet.letterCharacterSet.invertedSet]) {
+        if ([word containsString:@"eo"] || [word containsString:@"eu"]) count++;
+    }
+    return count;
+}
+
+// Whether a song is in a language other than `language`, line by line: one distinct line in five that the recognizer
+// is at least 80% sure is another language, or two lines in another script (Hangul, kana, Han among English, for
+// K-pop with only a verse in Korean). A line with two letters of another script counts however unsure the
+// recognizer is: NewJeans' "New Jeans" has six such lines, all short or mixed with English. So does a line of Korean
+// in Latin letters (romanizedKoreanWords). A chorus sung eight
+// times weighs as one line. The whole song's guess is not asked: short lines sway it (it reads Havana, all "ooh
+// na-na", as Dutch), and an unsure line counts neither way. A song with no line it is sure of counts as foreign,
+// too little to tell.
 static BOOL inAnotherLanguage(NSArray<SGKaraokeLine *> *lines, NSString *language) {
     NSString *(^code)(NSString *) = ^NSString *(NSString *tag) {
         return [tag componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"-_"]].firstObject.lowercaseString;
@@ -1744,15 +1781,20 @@ static BOOL inAnotherLanguage(NSArray<SGKaraokeLine *> *lines, NSString *languag
         if (!text.length || [seen containsObject:text]) continue;
         [seen addObject:text];
         distinct++;
+        BOOL lettersOther = otherScriptLetters(text, [targetScript isEqualToString:@"Latn"]) >= 2;
+        if (lettersOther) otherScript++;
         [recognizer reset];
         [recognizer processString:text];
         NSDictionary<NLLanguage, NSNumber *> *guess = [recognizer languageHypothesesWithMaximum:1];
         NLLanguage found = guess.allKeys.firstObject;
-        if (!found || guess[found].doubleValue < 0.8) continue;
+        BOOL confident = found && guess[found].doubleValue >= 0.8, inTarget = confident && [code(found) isEqualToString:target];
+        // A line sure to be in the target language does not count as romanized Korean, so French "peu" and "heure" stay.
+        if (!lettersOther && !inTarget && romanizedKoreanWords(text) >= 2) otherScript++;
+        if (!confident) continue;
         sure++;
-        if ([code(found) isEqualToString:target]) continue;
+        if (inTarget) continue;
         foreign++;
-        if (![[NSOrthography defaultOrthographyForLanguage:found].dominantScript isEqualToString:targetScript]) otherScript++;
+        if (!lettersOther && ![[NSOrthography defaultOrthographyForLanguage:found].dominantScript isEqualToString:targetScript]) otherScript++;
     }
     return !sure || foreign * 5 >= MAX(distinct, 5) || otherScript >= 2;
 }
@@ -1963,21 +2005,22 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
         SGLyricsSaveTranslation(track, language, lines);
     }, ^(NSArray<NSString *> *translations, NSString *error) {
         if (self->_translating == lines) self->_translating = nil;
-        if (!translations) {
-            [self offerExtras];
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No translation" message:error
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
+        // Translations can come with a note, which names the lines left out. Those lines stay untranslated, and
+        // asking again sends only them.
+        if (translations) {
+            [self takeTranslations:translations into:lines];
+            SGLyricsSaveTranslation(track, language, lines);
+            if (lines == self->_lines) self->_untranslated = anyUntranslated(lines);
+        }
+        [self offerExtras];
+        if (error) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:translations ? @"Partly translated" : @"No translation"
+                                                                           message:error preferredStyle:UIAlertControllerStyleAlert];
             // Over the player, which is dark whatever the system's appearance.
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
             [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
             [SGTopController() presentViewController:alert animated:YES completion:nil];
-            return;
         }
-        [self takeTranslations:translations into:lines];
-        SGLyricsSaveTranslation(track, language, lines);
-        // A batch Apple Intelligence turned down stays untranslated, and asking again sends only its lines.
-        if (lines == self->_lines) self->_untranslated = anyUntranslated(lines);
-        [self offerExtras];
     });
 }
 

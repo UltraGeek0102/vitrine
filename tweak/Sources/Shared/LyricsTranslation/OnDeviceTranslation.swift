@@ -119,7 +119,8 @@ public final class SGOnDeviceTranslation: NSObject {
         guard #available(iOS 26.0, *) else { return finish(done, nil, "Apple Intelligence needs iOS 26.") }
         let language = name(Locale.Language(identifier: languageTag))
         // Only the lines given text ("" for those translated already or with no words), 12 to a batch. A batch
-        // the model refuses or fails is left out and the rest go on, so an explicit verse costs its own lines only.
+        // the model refuses is asked again in halves (translateSplitting), and one that fails is left out while
+        // the rest go on, so an explicit line costs only itself.
         let wanted = lines.indices.filter { !lines[$0].isEmpty }
         Task {
             var out = [String](repeating: "", count: lines.count)
@@ -132,10 +133,12 @@ public final class SGOnDeviceTranslation: NSObject {
                 let chunkStarted = Date()
                 do {
                     let chunk = indices.map { lines[$0] }
-                    let answer = try await translateChunk(chunk, into: language, song: song, before: before)
-                    for (index, translation) in zip(indices, answer) { out[index] = translation }
-                    before = Array(zip(chunk, answer))
-                    translated += indices.count
+                    let answer = try await translateSplitting(chunk, into: language, song: song, before: before, failure: &failure)
+                    for (index, translation) in zip(indices, answer) where translation != nil {
+                        out[index] = translation!
+                        translated += 1
+                    }
+                    before = zip(chunk, answer).compactMap { line, translation in translation.map { (line, $0) } }
                     log.notice("intelligence: \(first + indices.count) of \(wanted.count) lines in \(Date().timeIntervalSince(chunkStarted), format: .fixed(precision: 1)) s")
                 } catch {
                     failure = error
@@ -146,8 +149,46 @@ public final class SGOnDeviceTranslation: NSObject {
             }
             log.notice("intelligence: \(translated) of \(wanted.count) lines into \(languageTag, privacy: .public) in \(Date().timeIntervalSince(started), format: .fixed(precision: 1)) s")
             if translated == 0, let failure { return finish(done, nil, problem(failure)) }
-            finish(done, out, nil)
+            let left = wanted.count - translated
+            finish(done, out, left == 0 ? nil
+                : "Apple Intelligence left \(left) of the song's \(wanted.count) lines untranslated. Ask again to try those lines once more.")
         }
+    }
+
+    // A batch, or nil for each line the model refused even alone: a refused batch is asked again in halves, down
+    // to single lines. Any other error ends the batch.
+    @available(iOS 26.0, *)
+    private static func translateSplitting(_ lines: [String], into language: String, song: String?, before: [(String, String)],
+                                           failure: inout Error?) async throws -> [String?] {
+        do {
+            return try await translateChunk(lines, into: language, song: song, before: before)
+        } catch where refused(error) {
+            failure = error
+            if lines.count == 1 { return [nil] }
+            let half = lines.count / 2
+            let head = try await translateSplitting(Array(lines[..<half]), into: language, song: song, before: before, failure: &failure)
+            let tail = try await translateSplitting(Array(lines[half...]), into: language, song: song, before: before, failure: &failure)
+            return head + tail
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func refused(_ error: Error) -> Bool {
+        #if compiler(>=6.4)
+        if #available(iOS 27.0, *), let error = error as? LanguageModelError {
+            switch error {
+            case .guardrailViolation, .refusal: return true
+            default: break
+            }
+        }
+        #endif
+        if let error = error as? LanguageModelSession.GenerationError {
+            switch error {
+            case .guardrailViolation, .refusal: return true
+            default: break
+            }
+        }
+        return false
     }
 
     // iOS 27 throws LanguageModelError, iOS 26 the session's GenerationError. The first is only in the iOS 27 SDK
@@ -183,21 +224,43 @@ public final class SGOnDeviceTranslation: NSObject {
     // and tone stay as they were; it is context only and gets no answer.
     @available(iOS 26.0, *)
     private static func translateChunk(_ lines: [String], into language: String, song: String?, before: [(String, String)]) async throws -> [String] {
+        let json = { (value: Any) in
+            String(decoding: (try? JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed)) ?? Data(), as: UTF8.self)
+        }
+        let context = before.isEmpty ? "" : "Just before, already translated: \(json(before.map { [$0.0, $0.1] }))\n\n"
+        let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: tokensPerLine * lines.count + 32)
+        let follow = """
+            Lines from just before may be given with their translations: they are not to be translated again, only \
+            followed, so names, pronouns and tone carry on and a sentence that runs on reads as one.
+            """
+        // Each line under its own number, in the question and the answer, so a sentence the model joins or splits
+        // across lines cannot move the translations after it onto the wrong lines (K-pop's mixed lines did).
+        if #available(iOS 26.4, *) {
+            let keys = lines.indices.map { String(format: "%02d", $0 + 1) }
+            let session = LanguageModelSession(model: model, instructions: """
+                You translate the lyrics of \(song ?? "a song") into \(language). You get a JSON object of numbered \
+                lines and answer with the same numbers, each holding the translation of that line alone, natural as \
+                sung, keeping the meaning of slang and idioms. A line that is empty, a sound or already in \(language) \
+                is given back as it is. \(follow)
+                """)
+            let root = DynamicGenerationSchema(name: "Lines", properties: keys.map {
+                DynamicGenerationSchema.Property(name: $0, schema: DynamicGenerationSchema(type: String.self))
+            })
+            let numbered = "{" + zip(keys, lines).map { "\(json($0)): \(json($1))" }.joined(separator: ", ") + "}"
+            let content = try await session.respond(to: context + "Translate: " + numbered,
+                                                    schema: try GenerationSchema(root: root, dependencies: []), options: options).content
+            return try keys.map { try content.value(String.self, forProperty: $0) }
+        }
         let session = LanguageModelSession(model: model, instructions: """
             You translate the lyrics of \(song ?? "a song") into \(language). You get a JSON array of lines and answer \
             with an array of the same length: each line's translation at the same place, natural as sung, keeping the \
             meaning of slang and idioms. A line that is empty, a sound or already in \(language) is given back as it is. \
-            Lines from just before may be given with their translations: they are not to be translated again, only \
-            followed, so names, pronouns and tone carry on and a sentence that runs on reads as one.
+            \(follow)
             """)
         let line = DynamicGenerationSchema(type: String.self)
         let schema = try GenerationSchema(root: DynamicGenerationSchema(arrayOf: line, minimumElements: lines.count, maximumElements: lines.count),
                                           dependencies: [])
-        let json = { (value: Any) in String(decoding: (try? JSONSerialization.data(withJSONObject: value)) ?? Data(), as: UTF8.self) }
-        let prompt = before.isEmpty ? json(lines)
-            : "Just before, already translated: \(json(before.map { [$0.0, $0.1] }))\n\nTranslate: \(json(lines))"
-        let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: tokensPerLine * lines.count + 32)
-        let answer = try await session.respond(to: prompt, schema: schema, options: options).content.value([String].self)
+        let answer = try await session.respond(to: context + "Translate: " + json(lines), schema: schema, options: options).content.value([String].self)
         return answer.count == lines.count ? answer : lines.indices.map { $0 < answer.count ? answer[$0] : "" }
     }
 }

@@ -80,13 +80,21 @@ Shared:
     AdBlock/      EeveeSpotify's ad blocking: the ad and upsell services silenced (AdServices.x), ad components out of the
                   Hub JSON (AdHubs.x) and the feeds (Feeds.m), Premium pop-ups dropped (AdPopups.x), and the responses
                   rewritten on the way in (AdNetwork.x, Premium.m over the protobuf walker in Protobuf.m), with crossfade
-                  and automix switched on in the player core and crossfade's switch kept in step with its slider (Crossfade.x)
+                  and automix switched on in the player core and crossfade's switch kept in step with its slider (Crossfade.x).
+                  With Spoof Premium on, RadioModes.m enables shuffle and repeat for radio/autoplay in either look:
+                  only restrictions made entirely of radio, endless_context and autoplay are allowed.
+                  Raw reason sets remain intact when Spotify copies its state. Positive radio evidence survives
+                  empty optimistic updates only for the same playbackId/contextURI; explicit non-radio reasons revoke it. The matching
+                  command's ESP request gets overrideRestrictions before the core receives it; other restrictions
+                  and commands stay as Spotify supplied them. The hooks install together only when the expected
+                  runtime signatures match. Checked by harness/radio-modes/; its README records device evidence.
     Privacy/      telemetry blocking and its counters, and the tracking taken off shared open.spotify.com links
                   (CleanLinks.x over the cleaner in CleanLinks.m)
     ArtistBlock/  tracks by blocked artists skipped as they start (ArtistSkip.x), the list and the Blocked artists page under Player
     Flags/        Spotify's remote-config flags: the provider hook, the generated table, the All flags page and the Labs page;
                   the provider pins 9.1.88's ios-reprise-liquid-glass-override.mode to default in both looks (after an All flags
-                  override) and logs the server's own value once, as a force_disabled would take the glass off the redesign
+                  override) and logs the server's own value once, as a force_disabled would take the glass off the redesign.
+                  It also pins 9.1.90's ios-navigationui-tabbar-impl.is_liquid_glass_tab_bar_enabled off in both looks.
     Gestures/     the double tap zones on the player: the grid, what each cell does, the recognizer (each look hooks it on)
     Lyrics/       the lyrics engine for the redesign's Apple Music style lyrics and the lock screen: lines read from
                   color-lyrics and the player's clock (KaraokeSource.x), words timed by estimate inside Spotify's line
@@ -467,8 +475,9 @@ Redesigned:
                   and a close with no pick dismisses the hidden sheet. Checked in the simulator against
                   harness/system-menu/
     Player/       the redesigned full screen player (Player.h lists its files); its more button opens the system
-                  menu (ContextMenu/), Spotify's rows and then Playback Speed, Pitch (with Pitch follows speed),
-                  Reverb and the backgrounds it can switch to (PlayerMenu.m), and a hold on either side of the
+                  menu (ContextMenu/), Spotify's rows and then Speed, Pitch & Reverb, which opens the sliders and
+                  Pitch follows speed in a popover from the ⋯ (SpeedPitchMenu.x), and the backgrounds it can switch
+                  to (PlayerMenu.m), and a hold on either side of the
                   cover plays at 2x until the finger lifts (PlayerArtwork.x), an octave higher while Pitch follows
                   speed is on. A Free account gets it too: Spotify's Reinvented Free player mode, whose units none of
                   the hooks reach, declines while the redesign runs, so the track falls to Spotify's other Free mode,
@@ -566,8 +575,10 @@ App:
                    that came over from upstream is left out, so a build without its own has no sheet). The Mod
                    page offers both again. Environment.m says once per install state, a few seconds in, when
                    EeveeSpotify is injected too (a dyld image named so, or its settings page's Swift class) or Spotify is not the version the mod is
-                   made for (SGSpotifyMadeFor, 9.1.78, or SGSpotifyLikelyWorks, 9.1.88, which ran cleanly in a short test), and when a redesign below iOS 26 did not start, and when the redesign runs without the app
-                   changes the IPA build makes (UIDesignRequiresCompatibility, as with a .deb injected by hand); all but
+                   supports (SGSpotifySupportedVersions in Onboarding.h: 9.1.78, which it is made for, and 9.1.88) or likely works on (SGSpotifyLikelyWorksVersions: 9.1.90, which ran cleanly in a short test), and when a redesign below iOS 26 did not start, and when the install lacks the app
+                   changes the IPA build makes, as with a .deb injected by hand: Spotify's own glass opt-out set (9.1.88's
+                   UIDesignRequiresCompatibility, under the redesign), or NSSupportsLiveActivities or MusicHapticsSupported
+                   missing, each named in the warning and the last two under Live Activity and Vibrations too; all but
                    the third stay as red rows at the top of Mod Settings. What Chroma left in Spotify's storage when Vitrine
                    replaced it (its Karaoke model and saved lock screen videos, never its listening history or audio
                    effects) is offered for deleting once, and stays a row there until it goes. Laid out on the simulator by harness/onboarding/
@@ -675,7 +686,8 @@ from gone through as sung to the vocals alone, with Sing along, Original and Voc
 (where the iPhone reads headphone motion; a page of its own, reading out On or Off, with a live preview at its top that
 follows the head through AirPods, or sways gently without them and holds still under Reduce Motion, a line under it
 saying which, then the switch; its row is on the main page too, under Karaoke's), the voice model's download (Paused and
-Checking among its states) and its removal, Ignore heat warnings, and under Advanced Runs on (Automatic: the Neural Engine
+Checking among its states) and its removal, Toggle from lyrics (the redesign's mic, on until switched off, issue #12),
+Ignore heat warnings, and under Advanced Runs on (Automatic: the Neural Engine
 beside the CPU; CPU only) and Prepare after updates, all applying straight away. Lock screen, on the main
 page under either look, opens the lock screen widget's page, titled Lock screen (Moving artwork, Lyrics or Every song, and the lyrics' style,
 Still or Animated, and Spotify's like and dislike buttons' flag; its podcast, audiobook and artwork flags stay in

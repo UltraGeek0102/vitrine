@@ -13,6 +13,8 @@
 void SGLyricsNoteReply(NSURLResponse *response, NSError *error) {}
 NSString *SGLyricsTranslationLanguage(void) { return nil; }
 SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { return nil; }
+SGModRow *SGOptionRow(NSString *t, NSString *s, NSString *k) { return nil; }
+id SGKaraokeTrackFor(NSString *trackID) { return nil; }
 UIViewController *SGTopController(void) { return nil; }
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
@@ -55,6 +57,10 @@ int main(void) {
         CHECK(!readReply(@"{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"[\\\"a\\\"]\"}]},\"finishReason\":\"STOP\"}]}", 200, 2, &problem)
               && [problem containsString:@"1 lines for the song's 2"]);
         CHECK(!readReply(@"{\"error\":{}}", 403, 2, &problem) && [problem containsString:@"key"]);
+        CHECK(!readReply(@"{\"error\":{\"message\":\"API key not valid. Please pass a valid API key.\"}}", 400, 2, &problem) && [problem containsString:@"key"]);
+        CHECK(!readReply(@"{\"error\":{\"message\":\"Invalid JSON payload\"}}", 400, 2, &problem) && [problem containsString:@"Invalid JSON payload"]);
+        CHECK(!readReply(@"{\"error\":{}}", 503, 2, &problem) && [problem containsString:@"busy"]);
+        CHECK(!readReply(@"{\"error\":{\"status\":\"UNAUTHENTICATED\"}}", 401, 2, &problem) && [problem containsString:@"key"]);
         CHECK(!readReply(@"{\"error\":{}}", 429, 2, &problem) && [problem containsString:@"limit"]);
         CHECK(!readReply(@"{}", 200, 2, &problem) && [problem containsString:@"could not be read"]);
         puts("lyrics translation: all checks passed");

@@ -4,6 +4,8 @@
 // redesign below iOS 26 that did not start (Core/SGUIMode.h), which turned itself off. Also what Chroma, installed
 // over the same Spotify before, left behind, offered once for deleting.
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Haptics/Haptics.h"
+#import "Shared/LiveActivity/LiveActivity.h"
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
@@ -26,7 +28,8 @@ NSString *SGSpotifyVersion(void) {
 // says nothing, rather than "Spotify unknown".
 static BOOL otherVersion(void) {
     NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-    return [version isKindOfClass:NSString.class] && ![version isEqualToString:SGSpotifyMadeFor] && ![version isEqualToString:SGSpotifyLikelyWorks];
+    return [version isKindOfClass:NSString.class] && ![SGSpotifySupportedVersions containsObject:version]
+        && ![SGSpotifyLikelyWorksVersions containsObject:version];
 }
 
 static SGProblem eevee(void) {
@@ -34,23 +37,46 @@ static SGProblem eevee(void) {
              @"Vitrine already blocks ads and brings lyrics, and EeveeSpotify hooks the same parts of Spotify. With both, Spotify can freeze as it starts or show the wrong lyrics. Sign Spotify again without EeveeSpotify."];
 }
 
-static SGProblem version(void) {
-    return @[[NSString stringWithFormat:@"Spotify %@ is not the version Vitrine is made for", SGSpotifyVersion()],
-             [NSString stringWithFormat:@"Vitrine is made for Spotify %@, and %@ likely works too. On another version some of its changes find nothing to change, and some screens can look wrong or crash. Inject Vitrine into Spotify %@ or %@.",
-                 SGSpotifyMadeFor, SGSpotifyLikelyWorks, SGSpotifyMadeFor, SGSpotifyLikelyWorks]];
+// "a", "a and b", "a, b and c", with `word` for the last join.
+static NSString *joined(NSArray<NSString *> *items, NSString *word) {
+    if (items.count < 2) return items.firstObject ?: @"";
+    NSString *head = [[items subarrayWithRange:NSMakeRange(0, items.count - 1)] componentsJoinedByString:@", "];
+    return [NSString stringWithFormat:@"%@ %@ %@", head, word, items.lastObject];
 }
 
-// Installed without the app changes Vitrine's IPA build makes (scripts/pipeline.sh: plist/liquid-glass.plist and the
-// Live Activity), as when its .deb is injected by hand: the system keeps its old bars, so the glass tab bar is gone, and
-// without MusicHapticsSupported iOS leaves Spotify out of Music Haptics.
-static BOOL withoutAppChanges(void) {
+static SGProblem version(void) {
+    NSArray<NSString *> *likely = SGSpotifyLikelyWorksVersions;
+    NSString *also = !likely.count ? @""
+        : [NSString stringWithFormat:@", and %@ likely %@ too", joined(likely, @"and"), likely.count == 1 ? @"works" : @"work"];
+    return @[[NSString stringWithFormat:@"Spotify %@ is not the version Vitrine is made for", SGSpotifyVersion()],
+             [NSString stringWithFormat:@"Vitrine is made for Spotify %@%@. On another version some of its changes find nothing to change, and some screens can look wrong or crash. Inject Vitrine into Spotify %@.",
+                 joined(SGSpotifySupportedVersions, @"and"), also,
+                 joined([SGSpotifySupportedVersions arrayByAddingObjectsFromArray:likely], @"or")]];
+}
+
+// What this install lacks of the app changes Vitrine's IPA build makes (scripts/pipeline.sh: plist/liquid-glass.plist),
+// as when its .deb is injected by hand, each said as what it costs. Spotify's own plist opting out of the system's glass
+// (9.1.88's) costs the redesign its glass bars. 9.1.90 has no such key, and none is the same as glass on. The Live
+// Activity and Music Haptics keys matter in either look, and their own settings say so too.
+static NSArray<NSString *> *missingAppChanges(void) {
+    NSMutableArray<NSString *> *missing = [NSMutableArray array];
     id compatibility = [NSBundle.mainBundle objectForInfoDictionaryKey:@"UIDesignRequiresCompatibility"];
-    return SGRedesignAvailable() && SGRedesignedUIStored() && !([compatibility isKindOfClass:NSNumber.class] && ![compatibility boolValue]);
+    if (SGRedesignAvailable() && SGRedesignedUIStored() && [compatibility isKindOfClass:NSNumber.class] && [compatibility boolValue])
+        [missing addObject:@"the tab bar stays Spotify's own, without its glass"];
+    if (!SGLiveActivityAllowedByInstall()) [missing addObject:@"the Live Activity is missing"];
+    if (!SGMusicHapticsListedByInstall())
+        [missing addObject:@"iOS does not list Spotify for Music Haptics, which stops vibrations in the background"];
+    return missing;
+}
+
+static BOOL withoutAppChanges(void) {
+    return missingAppChanges().count > 0;
 }
 
 static SGProblem appChanges(void) {
     return @[@"Installed without Vitrine's app changes",
-             @"The redesign needs changes to the app that only Vitrine's IPA build makes, so the tab bar stays Spotify's own, the Live Activity is missing, and iOS does not list Spotify for Music Haptics, which stops vibrations in the background. Build the IPA with Vitrine instead of injecting its .deb."];
+             [NSString stringWithFormat:@"Some of what Vitrine does needs changes to the app that only its IPA build makes. Without them, %@. Build the IPA with Vitrine instead of injecting its .deb.",
+                 joined(missingAppChanges(), @"and")]];
 }
 
 static SGProblem fellBack(void) {
@@ -132,7 +158,7 @@ NSArray<SGModRow *> *SGEnvironmentWarningRows(void) {
     if (SGEeveeSpotifyInjected())
         [rows addObject:SGWarningRow(@"EeveeSpotify is injected too", @"Tap for what that does", ^{ tell(@[eevee()]); })];
     if (otherVersion())
-        [rows addObject:SGWarningRow([NSString stringWithFormat:@"Made for Spotify %@", SGSpotifyMadeFor],
+        [rows addObject:SGWarningRow([NSString stringWithFormat:@"Made for Spotify %@", joined(SGSpotifySupportedVersions, @"and")],
                                      [NSString stringWithFormat:@"This is %@. Tap for what that does", SGSpotifyVersion()],
                                      ^{ tell(@[version()]); })];
     if (withoutAppChanges())

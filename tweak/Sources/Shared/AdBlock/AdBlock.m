@@ -39,6 +39,39 @@ static NSString *const upsellFlags[] = {
     @"ios-system-listeningparties.preview_ended_upsell_enabled",
 };
 
+// More of what Hide ads sets, by value: the ad features off, their guards and Skip buttons pinned on, and the
+// ad cards' timings pushed past use. Each key, type and value was checked against 9.1.88's and 9.1.90's flag
+// tables. canvas_skeleton_enabled and podcast_like_check_enabled are 9.1.90's. Enums are left alone: the table
+// does not name their values.
+static NSDictionary<NSString *, NSNumber *> *adValues(void) {
+    static NSDictionary *values;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        values = @{
+            @"ios-adsnowplaying-embeddednpv-impl.embedded_ad_html_element_enabled": @NO,
+            @"ios-adsnowplaying-embeddednpv-impl.reopen_refresh_enabled": @NO,
+            @"ios-adsnowplaying-embeddednpv-impl.canvas_skeleton_enabled": @NO,
+            @"ios-feature-adonappopen.core_fetch_enabled": @NO,
+            @"ios-home-evopage-impl.video_brand_ads_tagline_and_logo_enabled": @NO,
+            @"ios-jam-adsdisclaimersheetpage-impl.ads_disclaimer_sheet_enabled": @NO,
+            @"ios-reinventfree-adunlockeligibility-impl.ad_unlocked_on_demand_enabled": @NO,
+            @"ios-adsplatform-elementimpl.display_ad_prevent_dismiss_on_iawb_present": @NO,
+            @"ios-adsnowplaying-embeddednpv-impl.car_connection_check_enabled": @YES,
+            @"ios-adsnowplaying-embeddednpv-impl.podcast_like_check_enabled": @YES,
+            @"ios-adsnowplaying-embeddednpv-impl.prevent_duplicate_element_setup": @YES,
+            @"ios-feature-adonappopen.skip_button_enabled": @YES,
+            @"ios-feature-nowplayingbar.show_skip_button_during_skippable_ads": @YES,
+            // The table's largest delay: a card waits nearly three hours to show.
+            @"ios-adsnowplaying-embeddednpv-impl.render_delay_ms": @9999999,
+            @"ios-adsnowplaying-embeddednpv-impl.canvas_render_delay_ms": @9999999,
+            @"ios-feature-adonappopen.skippable_ad_delay_ms": @0,
+            @"ios-feature-adonappopen.cached_ad_expiration_period_seconds": @0,
+            @"ios-feature-adonappopen.background_refresh_frequency_seconds": @INT32_MAX,
+        };
+    });
+    return values;
+}
+
 static BOOL listed(NSString *key, NSString *const list[], size_t count) {
     for (size_t i = 0; i < count; i++) {
         if ([key isEqualToString:list[i]]) return YES;
@@ -54,14 +87,18 @@ static unsigned switchesNow(void) {
          | (SGHidden(SGKeyHideUpsells) ? kUpsells : 0);
 }
 
-static BOOL forcesOff(NSString *key, unsigned on) {
-    if ((on & kAds) && listed(key, adFlags, sizeof(adFlags) / sizeof(adFlags[0]))) return YES;
-    if ((on & kVideos) && [key isEqualToString:@"ios-feature-search.video_carousel_section_enabled"]) return YES;
-    return (on & kUpsells) && listed(key, upsellFlags, sizeof(upsellFlags) / sizeof(upsellFlags[0]));
+static NSNumber *forcedValue(NSString *key, unsigned on) {
+    if (on & kAds) {
+        if (listed(key, adFlags, sizeof(adFlags) / sizeof(adFlags[0]))) return @NO;
+        NSNumber *value = adValues()[key];
+        if (value) return value;
+    }
+    if ((on & kVideos) && [key isEqualToString:@"ios-feature-search.video_carousel_section_enabled"]) return @NO;
+    return (on & kUpsells) && listed(key, upsellFlags, sizeof(upsellFlags) / sizeof(upsellFlags[0])) ? @NO : nil;
 }
 
-BOOL SGAdBlockForcesFlagOff(NSString *key) {
-    return forcesOff(key, switchesNow());
+NSNumber *SGAdBlockForcedFlag(NSString *key) {
+    return forcedValue(key, switchesNow());
 }
 
 // After an override from the All flags page, and locking the rows that would turn the same flag off.
@@ -72,8 +109,8 @@ __attribute__((constructor)) static void registerForcer(void) {
         static unsigned atLaunch;
         static dispatch_once_t once;
         dispatch_once(&once, ^{ atLaunch = switchesNow(); });
-        return atLaunch && forcesOff(key, atLaunch) ? @NO : nil;
-    }, ^id(NSString *key) { return SGAdBlockForcesFlagOff(key) ? @NO : nil; });
+        return atLaunch ? forcedValue(key, atLaunch) : nil;
+    }, ^id(NSString *key) { return SGAdBlockForcedFlag(key); });
 }
 
 #pragma mark - counters

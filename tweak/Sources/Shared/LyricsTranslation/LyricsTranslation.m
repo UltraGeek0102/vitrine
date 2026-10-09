@@ -81,12 +81,19 @@ NSArray<NSString *> *SGGeminiTranslationsIn(id root, NSInteger status, NSError *
     id feedback = reply[@"promptFeedback"];
     id blocked = [feedback isKindOfClass:NSDictionary.class] ? feedback[@"blockReason"] : nil;
     id finished = [first isKindOfClass:NSDictionary.class] ? first[@"finishReason"] : nil;
+    id failed = [reply[@"error"] isKindOfClass:NSDictionary.class] ? reply[@"error"][@"message"] : nil;
+    NSString *googleSays = [failed isKindOfClass:NSString.class] ? failed : nil;
     if (error) {
         *problem = @"Gemini could not be reached.";
-    } else if (status == 400 || status == 403) {
+    } else if (status == 401 || status == 403 || (status == 400 && [googleSays localizedCaseInsensitiveContainsString:@"API key"])) {
         *problem = @"Gemini turned the key down. Check it on the Lyrics page.";
+    } else if (status == 400) {
+        *problem = googleSays.length ? [NSString stringWithFormat:@"Gemini did not take the request: %@", googleSays]
+                                     : @"Gemini did not take the request (400).";
     } else if (status == 429) {
         *problem = @"Gemini's limit for this key is reached for now.";
+    } else if (status == 503 || status == 500) {
+        *problem = @"Gemini is busy right now. Try again in a minute.";
     } else if (status != 200) {
         *problem = [NSString stringWithFormat:@"Gemini did not translate the song (%ld).", (long)status];
     } else if ([blocked isKindOfClass:NSString.class]) {
@@ -100,6 +107,33 @@ NSArray<NSString *> *SGGeminiTranslationsIn(id root, NSInteger status, NSError *
         *problem = @"Gemini's answer could not be read. Try again.";
     }
     return nil;
+}
+
+// Google's advice for a busy model or a full minute's quota (408, 429, 5xx): ask again after about 1, 2 and 4 s,
+// spread a little so phones do not all come back at once. A key turned down or a request that timed out is not
+// asked again.
+// plain is the same request without the thinking level, sent once if Gemini turns that field down: a model behind
+// gemini-flash-latest that does not know it still translates.
+static void sendToGemini(NSURLRequest *request, NSURLRequest *plain, NSUInteger attempt,
+                         void (^finished)(NSData *data, NSInteger status, NSError *error)) {
+    [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+        NSString *reply = status == 400 && data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+        if (plain && [reply localizedCaseInsensitiveContainsString:@"thinking"]) {
+            SGLog(@"gemini: the thinking level was turned down, asking without it");
+            sendToGemini(plain, nil, attempt, finished);
+            return;
+        }
+        if (attempt < 3 && !error && (status == 408 || status == 429 || status >= 500)) {
+            double delay = (double)(1 << attempt) * (0.75 + arc4random_uniform(500) / 1000.0);
+            SGLog(@"gemini: %ld, asking again in %.1f s", (long)status, delay);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                sendToGemini(request, plain, attempt + 1, finished);
+            });
+            return;
+        }
+        finished(data, status, error);
+    }] resume];
 }
 
 static NSMutableDictionary<NSString *, NSArray<NSString *> *> *sg_done;   // per launch, by track and language
@@ -140,6 +174,9 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
         @"generationConfig": @{
             @"responseMimeType": @"application/json",
             @"responseSchema": @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}},
+            // Gemini 3 thinks at length by default, which a whole song's translation does not need and which
+            // made it slow enough to time out.
+            @"thinkingConfig": @{@"thinkingLevel": @"low"},
         },
     };
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kEndpoint]];
@@ -148,8 +185,12 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
     request.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
-    [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+    NSMutableURLRequest *plain = [request mutableCopy];
+    NSMutableDictionary *plainBody = [body mutableCopy], *plainConfig = [body[@"generationConfig"] mutableCopy];
+    [plainConfig removeObjectForKey:@"thinkingConfig"];
+    plainBody[@"generationConfig"] = plainConfig;
+    plain.HTTPBody = [NSJSONSerialization dataWithJSONObject:plainBody options:0 error:nil];
+    sendToGemini(request, plain, 0, ^(NSData *data, NSInteger status, NSError *error) {
         id root = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         NSString *problem = nil;
         NSArray *translations = SGGeminiTranslationsIn(root, status, error, texts.count, &problem);
@@ -158,7 +199,7 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
             if (translations && trackID) sg_done[memo] = translations;
             done(translations, problem);
         });
-    }] resume];
+    });
 }
 
 #pragma mark - the row
@@ -171,7 +212,10 @@ static void askForKey(void) {
     // An empty field would store nothing and take the key away, which only Remove is for: Save waits for text.
     __weak UIAlertController *weakAlert = alert;
     UIAlertAction *save = [UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        NSString *key = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        // A key copied with the quotes around it, as from a code sample, is turned down by Google as it stands.
+        NSMutableCharacterSet *around = [NSMutableCharacterSet whitespaceAndNewlineCharacterSet];
+        [around addCharactersInString:@"\"'“”‘’"];
+        NSString *key = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:around];
         if (key.length) storeKey(key);
     }];
     save.enabled = NO;

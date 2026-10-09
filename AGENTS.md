@@ -25,8 +25,10 @@ can be given. `SGRedesignAvailable()` (`Core/SGUIMode.h`) says whether this OS h
 redesign runs only after a warning that it is untested there (`SGKeyRedesignUntested`, stored by
 `SGSetRedesignedUI` in `App/Pages.m`), and a launch with it that hangs (issue #37) is followed by one in
 the native look with both switches off. The native look's floor is iOS 16.1, which is
-Spotify 9.1.78's own. Vitrine is made for Spotify 9.1.78, and 9.1.88 likely works: it ran cleanly in a short test, so
-the install warning leaves it alone (`SGSpotifyLikelyWorks` in `App/Onboarding/Onboarding.h`). The IPA build reads
+Spotify 9.1.78's own. Vitrine is made for Spotify 9.1.78 and supports 9.1.88, the daily test build. 9.1.90 likely works:
+it ran cleanly in a short test. The install warning leaves all three alone. A new version goes in one of the two lists
+in `App/Onboarding/Onboarding.h` (`SGSpotifySupportedVersions`, `SGSpotifyLikelyWorksVersions`), and the warning's text
+and About follow. The IPA build reads
 Spotify's flag table from the IPA it builds, and again when the version changes.
 
 ## Where code goes (`tweak/Sources/`)

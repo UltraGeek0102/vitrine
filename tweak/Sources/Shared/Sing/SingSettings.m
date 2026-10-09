@@ -180,9 +180,15 @@ UIViewController *SGSpatialVoiceSettingsPage(void) {
 
 @end
 
+NSNotificationName const SGSingButtonDidChangeNotification = @"SGSingButtonDidChangeNotification";
+
 UIViewController *SGSingSettingsPage(void) {
     SGModRow *sing = SGOptionRow(@"Karaoke", nil, SGKeySing);
     sing.changed = ^(BOOL on) { SGSetSingOn(on); };
+    // Only the redesign's lyrics have the mic.
+    SGModRow *button = SGSwitchRow(@"Toggle from lyrics", @"The mic in the corner of the lyrics", SGKeySingButton);
+    button.changed = ^(BOOL on) { [NSNotificationCenter.defaultCenter postNotificationName:SGSingButtonDidChangeNotification object:nil]; };
+    button.visible = ^BOOL { return SGRedesignedUIStored(); };
     SGModRow *heat = SGOptionRow(@"Ignore heat warnings", @"Keeps Karaoke going on a hot iPhone, which then gets hotter", SGKeySingIgnoreHeat);
     heat.changed = ^(BOOL on) { SGSetSingIgnoresHeat(on); };
     __block __weak SGModPage *page;
@@ -216,7 +222,7 @@ UIViewController *SGSingSettingsPage(void) {
     SGModRow *prepare = SGSwitchRow(@"Prepare after updates",
                                     @"Readies the Neural Engine in the background after Vitrine or iOS updates, so Karaoke starts at full speed", SGKeySingPrepareAhead);
     SGSingPage *made = [[SGSingPage alloc] initWithTitle:@"Karaoke" intro:nil sections:@[
-        SGSection(nil, @[sing, heat, model, remove]),
+        SGSection(nil, @[sing, button, heat, model, remove]),
         SGSection(nil, @[spatial]),
         SGNotedSection(@"Advanced", @[units, prepare],
                        @"Karaoke turns a song's vocals down to sing over, or the rest down to hear the vocals alone, with a voice model that "

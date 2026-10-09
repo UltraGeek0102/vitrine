@@ -40,7 +40,9 @@
 // is positionAsOfTimestamp minus timeIntervalSinceNow times [self playbackSpeed] (disassembly,
 // 0x1057735ec), so playbackSpeed is hooked to include this speed, and the scrubber, the lyrics and the lock
 // screen move with the sound. That bets the player's reported positions follow what the decoder handed
-// over, which is what it counts.
+// over, which is what it counts. The player does not report a change of this speed, so a state stamped
+// before it would run all its time at the new speed and jump; -position takes back the difference for the
+// time each earlier speed played (speedCorrection).
 //
 // When the music's output was never connected, pitch falls back to the way it first shipped: a render notify
 // on the RemoteIO unit runs each finished buffer through a unit working in place; speed is then unavailable.
@@ -58,6 +60,7 @@
 // A change waits for a render in progress to end; a render never waits. Everything else is main thread.
 #import <AudioToolbox/AudioToolbox.h>
 #import <mach/mach_time.h>
+#import <os/lock.h>
 #import <pthread.h>
 #import <stdatomic.h>
 #import "Core/SGCore.h"
@@ -882,11 +885,45 @@ BOOL SGPlayerSpeedAllowed(void) {
     return tapped();
 }
 
+// The speed's changes, oldest first: when each came and the speed before it, for speedCorrection.
+// ponytail: the last 16 only. A state stamped before them runs its oldest part at the wrong speed, but every
+// seek, skip and pause stamps a new one.
+typedef struct {
+    CFAbsoluteTime at;
+    float before;
+} SpeedChange;
+enum { kSpeedChanges = 16 };
+static SpeedChange sg_speedChanges[kSpeedChanges];
+static unsigned sg_speedChangeCount;
+static os_unfair_lock sg_speedChangesLock = OS_UNFAIR_LOCK_INIT;
+
 void SGSetPlayerSpeed(double speed) {
     if (!tapped()) return;
+    os_unfair_lock_lock(&sg_speedChangesLock);
+    if ((float)speed != sg_speed) {
+        sg_speedChanges[sg_speedChangeCount++ % kSpeedChanges] = (SpeedChange){CFAbsoluteTimeGetCurrent(), sg_speed};
+    }
     sg_speed = (float)speed;
     storeFloat(&sg_speedBits, sg_speed);
+    os_unfair_lock_unlock(&sg_speedChangesLock);
     apply();
+}
+
+// Song seconds that -position, running all the time since `stamp` at today's speed, counts too many (negative)
+// or too few: each stretch before a change since then played at the speed before it.
+static double speedCorrection(CFAbsoluteTime stamp) {
+    double seconds = 0;
+    os_unfair_lock_lock(&sg_speedChangesLock);
+    float now = loadFloat(&sg_speedBits);
+    CFAbsoluteTime from = stamp;
+    for (unsigned i = MIN(sg_speedChangeCount, (unsigned)kSpeedChanges); i > 0; i--) {
+        SpeedChange change = sg_speedChanges[(sg_speedChangeCount - i) % kSpeedChanges];
+        if (change.at <= from) continue;
+        seconds += (change.before - now) * (change.at - from);
+        from = change.at;
+    }
+    os_unfair_lock_unlock(&sg_speedChangesLock);
+    return seconds;
 }
 
 float SGPlayerPitch(void) {
@@ -974,11 +1011,30 @@ BOOL SGPlayerWatchMusicOutput(SGPlayerOutputWatcher watcher) {
 
 #pragma mark - Spotify's clock
 
+// Sing's -position asks [self position] again for the raw one, so this hook may run inside itself; only the
+// outer one corrects.
+static _Thread_local BOOL sg_correcting;
+
 %hook SPTPlayerState
 - (double)playbackSpeed {
     double speed = %orig;
     float ours = loadFloat(&sg_speedBits);
     return ours > 0 && ours != 1 ? speed * ours : speed;
+}
+
+- (double)position {
+    if (sg_correcting) return %orig;
+    sg_correcting = YES;
+    double position = %orig;
+    sg_correcting = NO;
+    NSDate *stamp = self.timestamp;
+    if (position < 0 || self.isPaused || !stamp) return position;
+    double correction = speedCorrection(stamp.timeIntervalSinceReferenceDate);
+    if (correction == 0) return position;
+    // Spotify's own speed, a podcast's, runs under ours.
+    float ours = loadFloat(&sg_speedBits);
+    double rate = self.playbackSpeed, spotify = ours > 0 && ours != 1 ? rate / ours : rate;
+    return MAX(0, position + correction * spotify);
 }
 %end
 

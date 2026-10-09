@@ -38,8 +38,8 @@ UIViewController *SGAboutPage(void) {
     SGModRow *reset = withSymbol(SGActionRow(@"Reset all settings", nil, ^{ confirmReset(); }), @"trash");
     reset.color = SGRed();
     NSString *spotify = SGSpotifyVersion();
-    if ([spotify isEqualToString:SGSpotifyLikelyWorks]) spotify = [spotify stringByAppendingString:@", likely works"];
-    else if (![spotify isEqualToString:SGSpotifyMadeFor]) spotify = [NSString stringWithFormat:@"%@, made for %@", spotify, SGSpotifyMadeFor];
+    if ([SGSpotifyLikelyWorksVersions containsObject:spotify]) spotify = [spotify stringByAppendingString:@", likely works"];
+    else if (![SGSpotifySupportedVersions containsObject:spotify]) spotify = [NSString stringWithFormat:@"%@, made for %@", spotify, SGSpotifyMadeFor];
     // The row reads out where the build stands and opens the changelog of everything newer than it.
     SGModRow *updates = SGPageRow(@"Updates", ^UIViewController *{ return SGUpdatePage(); });
     updates.value = ^NSString *{ return SGUpdateStatus(); };

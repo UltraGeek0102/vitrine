@@ -155,3 +155,5 @@ void SGKaraokeSeek(NSInteger ms) {
 }
 // "“Title” by Artist" the translators are told.
 NSString *SGLyricsSongName(NSString *trackID) { return @"“Sample” by Harness"; }
+// Karaoke's settings tell the lyrics to show or hide the mic.
+NSNotificationName const SGSingButtonDidChangeNotification = @"SGSingButtonDidChangeNotification";

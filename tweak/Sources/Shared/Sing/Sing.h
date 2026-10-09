@@ -30,6 +30,10 @@
 
 // The mic: on and off at once, from the button or the Sing page; off until switched on.
 #define SGKeySing @"spotifyglass.sing"
+// Whether the redesign's lyrics show the mic in their corner; on until switched off (issue #12). Karaoke itself
+// stays on its own switch, which this does not touch.
+#define SGKeySingButton @"spotifyglass.sing.button"
+extern NSNotificationName const SGSingButtonDidChangeNotification;
 // The vocals' level, 0 (gone) through 1 (as the song has them) to 2 (the vocals alone) at the slider's top.
 #define SGKeySingLevel @"spotifyglass.sing.level"
 // Keeps the model running on a hot iPhone, which otherwise lets it go from the thermal state Serious up.

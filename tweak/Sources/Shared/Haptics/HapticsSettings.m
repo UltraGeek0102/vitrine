@@ -9,6 +9,7 @@
 // new strength with each step, and the preview ripples with it.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
+#import "Settings/SGPageStyle.h"
 #import "Haptics.h"
 #import "SGVibrationsPreview.h"
 
@@ -47,6 +48,10 @@ static BOOL backgroundAvailable(void) {
 
 BOOL SGMusicHapticsOn(void) {
     return SGFlag(SGKeyMusicHaptics, NO);
+}
+
+BOOL SGMusicHapticsListedByInstall(void) {
+    return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"MusicHapticsSupported"] boolValue];
 }
 
 BOOL SGMusicHapticsInBackground(void) {
@@ -145,12 +150,22 @@ static NSArray<SGModSection *> *sections(SGVibrationsPreview *preview, void (^ex
     // What iOS's own is doing, or, while it is off in Accessibility, a row saying where to turn it on.
     SGModRow *status = SGStatRow(@"Status", ^NSString *{ return SGMusicHapticsStatus(); });
     status.visible = ^BOOL { return SGMusicHapticsInBackground() && SGSystemMusicHapticsOn(); };
+    // Under In the Background while the install lacks the key iOS lists apps for Music Haptics by.
+    SGModRow *unlisted = SGWarningRow(@"In the Background is missing from this install", @"Tap for why", ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"In the Background is missing"
+            message:@"iOS plays Music Haptics only for apps that say they support it, and only Vitrine's IPA build writes that into Spotify. This Spotify was put together another way, such as with Vitrine's .deb injected by hand, so the vibrations stop when Spotify leaves the screen. Music Haptics above still works while Spotify is open. Build the IPA with Vitrine to get both."
+            preferredStyle:UIAlertControllerStyleAlert];
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+        [SGTopController() presentViewController:alert animated:YES completion:nil];
+    });
+    unlisted.visible = ^BOOL { return backgroundAvailable() && !SGMusicHapticsListedByInstall(); };
     SGModRow *systemOff = SGActionRow(@"Music Haptics is off in iOS", @"Tap to turn it on in Settings", explain);
     systemOff.visible = ^BOOL { return SGMusicHapticsInBackground() && !SGSystemMusicHapticsOn(); };
 
     return @[
         SGSection(nil, @[SGWithSymbol(controls, @"hand.tap"), controlStrength]),
-        SGSection(nil, @[SGWithSymbol(music, @"waveform"), musicStrength, follows, background, status, systemOff]),
+        SGSection(nil, @[SGWithSymbol(music, @"waveform"), musicStrength, follows, background, unlisted, status, systemOff]),
     ];
 }
 

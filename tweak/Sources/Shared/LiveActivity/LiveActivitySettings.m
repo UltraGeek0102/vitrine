@@ -3,6 +3,7 @@
 // apply at once to a card that is showing.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
+#import "Settings/SGPageStyle.h"
 #import "Shared/Player/SleepTimer.h"
 #import "LiveActivity.h"
 #import "SGLiveActivityPreview.h"
@@ -64,6 +65,24 @@ static SGModRow *menuRow(NSString *title, NSString *key, NSArray<NSString *> *na
     });
 }
 
+BOOL SGLiveActivityAllowedByInstall(void) {
+    return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSSupportsLiveActivities"] boolValue];
+}
+
+// At the top while the install lacks the key, saying why nothing shows and what to do.
+static SGModRow *missingRow(void) {
+    SGModRow *row = SGWarningRow(@"Missing from this install", @"Tap for why", ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Live Activity is missing"
+            message:@"iOS shows a Live Activity only for an app that says it has one, and only Vitrine's IPA build writes that into Spotify. This Spotify was put together another way, such as with Vitrine's .deb injected by hand, so iOS turns the card down. Build the IPA with Vitrine to get it."
+            preferredStyle:UIAlertControllerStyleAlert];
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+        [SGTopController() presentViewController:alert animated:YES completion:nil];
+    });
+    row.visible = ^BOOL { return !SGLiveActivityAllowedByInstall(); };
+    return row;
+}
+
 UIViewController *SGLiveActivitySettingsPage(void) {
     SGLiveActivityPreview *preview = [SGLiveActivityPreview new];
     __weak SGLiveActivityPreview *weakPreview = preview;
@@ -91,7 +110,7 @@ UIViewController *SGLiveActivitySettingsPage(void) {
     SGModRow *fade = SGMenuRow(@"Fade out", fades, ^NSString *{ return fades[(NSUInteger)SGSleepTimerFadeChoice()]; },
                                ^(NSInteger index) { SGSetInt(SGKeySleepTimerFade, index); });
     SGLiveActivityPage *page = [[SGLiveActivityPage alloc] initWithTitle:@"Live Activity" intro:nil sections:@[
-        SGSection(nil, @[on, view, without, alignment, translation, size]),
+        SGSection(nil, @[missingRow(), on, view, without, alignment, translation, size]),
         SGNotedSection(@"Card", @[artwork, colors, progress],
                        @"Colors: Spotify puts the cover's color behind Spotify's green, Artwork takes the green from the cover too, "
                        @"and Plain is white on the lock screen's own background. "
