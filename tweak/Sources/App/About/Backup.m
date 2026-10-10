@@ -1,5 +1,9 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <OSLog/OSLog.h>
+#import <sys/utsname.h>
 #import "Core/SGCore.h"
+#import "Shared/AdBlock/AdBlock.h"
+#import "Shared/Lyrics/Lyrics.h"
 #import "Settings/SGPageStyle.h"
 #import "About.h"
 #import "Redesigned/Player/Player.h"
@@ -41,6 +45,50 @@ void SGExportSettings(void) {
     NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"spotifyglass-settings.json"]];
     [data writeToURL:url atomically:YES];
 
+    UIViewController *top = SGTopController();
+    UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
+    sheet.popoverPresentationController.sourceView = top.view;
+    [top presentViewController:sheet animated:YES completion:nil];
+}
+
+void SGShareDiagnostics(void) {
+    NSMutableString *text = [NSMutableString string];
+    struct utsname machine;
+    uname(&machine);
+    [text appendFormat:@"Vitrine %s, Spotify %@, iOS %@, %s\n", SG_VERSION,
+        [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown",
+        UIDevice.currentDevice.systemVersion, machine.machine];
+    [text appendFormat:@"look %@, hide ads %d, hide upsells %d, spoof premium %d, EeveeSpotify %d\n\n",
+        SGRedesignedUIStored() ? @"redesign" : @"native", SGHidden(SGKeyHideAds), SGHidden(SGKeyHideUpsells),
+        SGHidden(SGKeyFakePremium), SGEeveeSpotifyInjected()];
+    [text appendString:@"== ads blocked (stopped of checked)\n"];
+    for (NSString *label in SGAdBlockLabels()) {
+        NSUInteger checked = SGAdBlockChecked(label);
+        [text appendFormat:@"%@: %lu%@\n", label, (unsigned long)SGAdBlockCount(label),
+            checked == NSNotFound ? @"" : [NSString stringWithFormat:@" of %lu", (unsigned long)checked]];
+    }
+    // This launch's lines, from the system log: release builds keep none of their own.
+    [text appendString:@"\n== log, this launch\n"];
+    NSError *error;
+    OSLogStore *store = [OSLogStore storeWithScope:OSLogStoreCurrentProcessIdentifier error:&error];
+    // FLEX builds dump the screen's views into the log, page after page; the report keeps the lines.
+    NSPredicate *ours = [NSPredicate predicateWithFormat:
+        @"composedMessage BEGINSWITH '[spotifyglass]' AND NOT composedMessage BEGINSWITH '[spotifyglass] screen dump'"];
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    for (OSLogEntry *entry in [store entriesEnumeratorWithOptions:0 position:nil predicate:ours error:&error]) {
+        [lines addObject:[NSString stringWithFormat:@"%@ %@", entry.date, [entry.composedMessage substringFromIndex:15]]];
+    }
+    // ponytail: the last 1500 lines only; a whole day's launch can hold tens of thousands.
+    NSUInteger keep = MIN(lines.count, 1500);
+    [text appendString:[[lines subarrayWithRange:NSMakeRange(lines.count - keep, keep)] componentsJoinedByString:@"\n"]];
+    if (!lines.count) [text appendFormat:@"(none: %@)", error.localizedDescription ?: @"the log is empty"];
+    NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
+    NSString *config = [NSString stringWithContentsOfURL:[caches URLByAppendingPathComponent:@"Vitrine/live-config.txt"]
+                                                encoding:NSUTF8StringEncoding error:nil];
+    [text appendFormat:@"\n\n== config Spotify's server last sent\n%@", config ?: @"(none yet: Spoof Premium is off, or no fetch so far)\n"];
+
+    NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"vitrine-diagnostics.txt"]];
+    [text writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:nil];
     UIViewController *top = SGTopController();
     UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
     sheet.popoverPresentationController.sourceView = top.view;

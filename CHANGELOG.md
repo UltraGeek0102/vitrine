@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.9](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.8...v1.0.0-beta.9) (2026-10-10)
+
+
+### Features
+
+* Share diagnostics, and the ad counts say what each hook checked ([bad3c46](https://github.com/My-Name-Is-Jeff/vitrine/commit/bad3c4610a37145b32a37c8e4774e93c4b2261b5))
+
+
+### Fixes
+
+* Hide ads no longer blocks player routes whose names contain "ad" ([524d845](https://github.com/My-Name-Is-Jeff/vitrine/commit/524d8454f0e6f70943716da6f1a50c1f496ad59f))
+* Spoof Premium turns off the player core's ad-state fetching ([0603f40](https://github.com/My-Name-Is-Jeff/vitrine/commit/0603f40c263b7a0704efe4e6425aaef64d480af6))
+* the profile avatar sits at the trailing edge of Library and Search on Spotify 9.1.90 ([e0a28fe](https://github.com/My-Name-Is-Jeff/vitrine/commit/e0a28fee428bda50d5e14844ec862fcc3896b3e8))
+
 ## [1.0.0-beta.8](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.7...v1.0.0-beta.8) (2026-10-09)
 
 

@@ -264,6 +264,13 @@ static UIView *findIdentifier(UIView *view, NSString *identifier) {
     return nil;
 }
 
+BOOL SGRIsAvatar(UIView *view) {
+    static Class faceClass;
+    if (!faceClass) faceClass = NSClassFromString(@"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer");
+    return [view.accessibilityIdentifier isEqualToString:@"Components.UI.SideDrawerButton"]
+        || (faceClass && [view isKindOfClass:faceClass]);
+}
+
 UIView *SGRFindByIdentifier(UIView *root, NSString *identifier, const void *cacheKey) {
     if (!root || !identifier.length) return nil;
     SGRWeakBox *box = cacheKey ? objc_getAssociatedObject(root, cacheKey) : nil;

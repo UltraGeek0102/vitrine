@@ -17,6 +17,7 @@
     scripts/phone.py tab 0 | tab Search
     scripts/phone.py settings.open
     scripts/phone.py settings.page "Appearance"
+    scripts/phone.py pref --key spotifyglass.font --value 6     # a setting, as a whole number (--text for a string, --remove 1)
     scripts/phone.py wait --id X [--gone 1] [--timeout 5]
     scripts/phone.py wait --menu 1 [--gone 1]
     scripts/phone.py wait --log "system menu: the player's menu is up" --timeout 3

@@ -66,6 +66,8 @@ UIViewController *SGAboutPage(void) {
         SGSection(nil, @[
             withSymbol(SGActionRow(@"Export settings", nil, ^{ SGExportSettings(); }), @"square.and.arrow.up"),
             withSymbol(SGActionRow(@"Import settings", nil, ^{ SGImportSettings(); }), @"square.and.arrow.down"),
+            withSymbol(SGActionRow(@"Share diagnostics", @"For a bug report: versions, ad counts, this launch's log and Spotify's config. Song names can show.",
+                                   ^{ SGShareDiagnostics(); }), @"stethoscope"),
         ]),
         SGSection(nil, @[reset]),
     ] footer:nil];

@@ -55,6 +55,7 @@ NSData *SGStripFeed(NSData *body) {
     NSMutableArray<SGPBField *> *kept = [NSMutableArray array];
     for (SGPBField *section in sections) {
         if (section.number != 1 || section.wire != 2) return nil;
+        SGAdBlockSawOne(@"Feed sections");
         if (adSection(section.payload)) SGAdBlockCountOne(@"Feed sections");
         else [kept addObject:section];
     }

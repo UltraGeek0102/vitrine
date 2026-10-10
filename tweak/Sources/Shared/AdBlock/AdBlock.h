@@ -25,6 +25,12 @@ NSNumber *SGAdBlockForcedFlag(NSString *key);
 void SGAdBlockCountOne(NSString *label);
 NSArray<NSString *> *SGAdBlockLabels(void);
 NSUInteger SGAdBlockCount(NSString *label);
+// What a hook looked at under `label`, stopped or not, so a 0 can tell a hook Spotify never calls from one that
+// found nothing. Kept with the counts but saved only with a stop or as Spotify leaves the screen: some hooks see a
+// request a second. SGAdBlockChecked is NSNotFound for a kind that counts no checks, and 0 for one whose hook has
+// not run, which on a new Spotify can mean it never will.
+void SGAdBlockSawOne(NSString *label);
+NSUInteger SGAdBlockChecked(NSString *label);
 void SGResetAdBlock(void);
 
 // Premium.m: the body of v1/customize, or the bootstrap message that wraps one, rewritten to a

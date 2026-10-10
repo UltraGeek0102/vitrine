@@ -41,7 +41,9 @@ UIViewController *SGAdsSettingsPage(void) {
     NSMutableArray<SGModRow *> *counts = [NSMutableArray array];
     for (NSString *label in SGAdBlockLabels()) {
         [counts addObject:SGStatRow(label, ^NSString *{
-            return @(SGAdBlockCount(label)).stringValue;
+            NSUInteger checked = SGAdBlockChecked(label);
+            return checked == NSNotFound ? @(SGAdBlockCount(label)).stringValue
+                : [NSString stringWithFormat:@"%lu of %lu", (unsigned long)SGAdBlockCount(label), (unsigned long)checked];
         })];
     }
     [counts addObject:SGStatRow(@"Total", ^NSString *{
@@ -65,7 +67,8 @@ UIViewController *SGAdsSettingsPage(void) {
             SGWithSymbol(fakePremium, @"crown"),
         ], @"Free accounts only."),
         SGPrivacySection(),
-        SGSection(@"Ads blocked so far", counts),
+        SGNotedSection(@"Ads blocked so far", counts,
+                       @"\"3 of 214\" is 3 stopped of 214 checked. 0 of 0 means Spotify never asked, so that part does nothing on this version."),
         SGPrivacyCountersSection(),
     ] footer:nil];
 }

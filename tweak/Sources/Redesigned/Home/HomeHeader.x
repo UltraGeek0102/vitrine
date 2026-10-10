@@ -145,16 +145,9 @@ static void layoutHeader(UIViewController *page) {
     UIStackView *stack = sg_stack;
     vanish(sg_scrim);
 
-    // The avatar by its identifier, which both versions give it: 9.1.88 draws it in an AdaptiveFaceContainer,
-    // 9.1.90 in an Encore button around a listening-activity pulse. Taken by the class alone, 9.1.90's avatar
-    // was hidden with the pills.
-    static Class faceClass;
-    if (!faceClass) faceClass = NSClassFromString(@"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer");
     UIView *face = nil;
     for (UIView *part in stack.arrangedSubviews) {
-        BOOL avatar = [part.accessibilityIdentifier isEqualToString:@"Components.UI.SideDrawerButton"]
-                   || (faceClass && [part isKindOfClass:faceClass]);
-        if (avatar && !face) face = part;
+        if (SGRIsAvatar(part) && !face) face = part;
         else vanish(part);
     }
     // Brought back if an earlier pass, or an earlier build, took it for a pill.

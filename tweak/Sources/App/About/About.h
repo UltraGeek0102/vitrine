@@ -72,5 +72,9 @@ SGModRow *SGSigningExpiryRow(void);   // "Signed until …", nil without a profi
 // what is set and restarting.
 void SGExportSettings(void);
 void SGImportSettings(void);
+// A text file for a bug report through the share sheet: the versions and switches, the ad counts, this launch's
+// log lines and the config Spotify's server last sent (Shared/AdBlock/Premium.m). No account details or settings
+// values beyond the switches named; the log can name songs played.
+void SGShareDiagnostics(void);
 
 UIViewController *SGAboutPage(void);   // the Mod page

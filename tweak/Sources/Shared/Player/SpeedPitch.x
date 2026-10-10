@@ -38,11 +38,12 @@
 //
 // Spotify's clock keeps running at its own speed between the player's reports: -[SPTPlayerState position]
 // is positionAsOfTimestamp minus timeIntervalSinceNow times [self playbackSpeed] (disassembly,
-// 0x1057735ec), so playbackSpeed is hooked to include this speed, and the scrubber, the lyrics and the lock
-// screen move with the sound. That bets the player's reported positions follow what the decoder handed
-// over, which is what it counts. The player does not report a change of this speed, so a state stamped
-// before it would run all its time at the new speed and jump; -position takes back the difference for the
-// time each earlier speed played (speedCorrection).
+// 0x1057735ec), so playbackSpeed is hooked to include this speed. Away from 1x the player's reports fall
+// behind the sound: on 9.1.90 at 1.5x, after about 30 s it reports a stall every 3 s that the sound never
+// has, each 1.2 s, and its clock stays that far behind until a seek or the next track (24 s after 100 s).
+// So from the moment the speed leaves 1x, -position counts its own clock: Spotify's position then, plus the
+// song the mixer has handed over since (sg_clock). A seek, skip, stop or new track hands the clock back to
+// Spotify's, and away from 1x takes Spotify's next report as the new start.
 //
 // When the music's output was never connected, pitch falls back to the way it first shipped: a render notify
 // on the RemoteIO unit runs each finished buffer through a unit working in place; speed is then unavailable.
@@ -66,6 +67,7 @@
 #import "Core/SGCore.h"
 #import "Core/SGRebind.h"
 #import "Headers/SPTPlayer.h"
+#import "PlayerState.h"
 #import "SpeedPitch.h"
 #import "SGTimePitch.h"
 
@@ -129,6 +131,13 @@ static OSStatus (*sg_setProperty)(AudioUnit, AudioUnitPropertyID, AudioUnitScope
 
 static Output *music(void) {
     return atomic_load(&sg_music);
+}
+
+// Microseconds of song the music's mixer has handed over with sound, the own clock's (sg_clock).
+static _Atomic uint64_t sg_playedMicros;
+
+static double playedSeconds(void) {
+    return atomic_load_explicit(&sg_playedMicros, memory_order_relaxed) / 1e6;
 }
 
 // Whether the music's output is fed through this file's callback.
@@ -208,7 +217,12 @@ static OSStatus pullSource(Output *output, AudioUnit source, const AudioTimeStam
             return noErr;
         }
         // A buffer marked silent may still hold what was in it before; nothing after this reads the mark.
-        if (flags & kAudioUnitRenderAction_OutputIsSilence) silence(target);
+        if (flags & kAudioUnitRenderAction_OutputIsSilence) {
+            silence(target);
+        } else if (output == music()) {
+            double rate = rateOf(&output->client);
+            if (rate > 0) atomic_fetch_add_explicit(&sg_playedMicros, (uint64_t)(count * 1e6 / rate), memory_order_relaxed);
+        }
         done += count;
     }
     return noErr;
@@ -885,45 +899,51 @@ BOOL SGPlayerSpeedAllowed(void) {
     return tapped();
 }
 
-// The speed's changes, oldest first: when each came and the speed before it, for speedCorrection.
-// ponytail: the last 16 only. A state stamped before them runs its oldest part at the wrong speed, but every
-// seek, skip and pause stamps a new one.
-typedef struct {
-    CFAbsoluteTime at;
-    float before;
-} SpeedChange;
-enum { kSpeedChanges = 16 };
-static SpeedChange sg_speedChanges[kSpeedChanges];
-static unsigned sg_speedChangeCount;
-static os_unfair_lock sg_speedChangesLock = OS_UNFAIR_LOCK_INIT;
+// The own clock (see the top): `on` while it counts, from `position` song seconds when `played` was
+// playedSeconds(), for `track`. `armed` takes the first report stamped at or after `notBefore` as its start.
+static struct {
+    BOOL on, armed;
+    CFAbsoluteTime notBefore;
+    double position, played;
+} sg_clock;
+// The newest report seen, to tell a seek from elsewhere (another device over Connect) by its position: one
+// further than kSeekGap from where the report before would be by then, both made since the speed last changed
+// (sg_speedChangedAt). A false stall moves it 1.2 s at most.
+static struct {
+    CFAbsoluteTime stamp;
+    double asOf, speed;
+} sg_lastReport;
+static CFAbsoluteTime sg_speedChangedAt;
+static const double kSeekGap = 3;
+static NSString *sg_clockTrack;
+static os_unfair_lock sg_clockLock = OS_UNFAIR_LOCK_INIT;
+
+static NSString *trackOf(SPTPlayerState *state) {
+    return [state.track.URI description];
+}
+
+// Spotify's clock again from here; away from 1x, its next report starts the own clock over.
+static void handBack(void) {
+    os_unfair_lock_lock(&sg_clockLock);
+    sg_clock = (typeof(sg_clock)){.armed = loadFloat(&sg_speedBits) != 1, .notBefore = CFAbsoluteTimeGetCurrent()};
+    os_unfair_lock_unlock(&sg_clockLock);
+}
 
 void SGSetPlayerSpeed(double speed) {
     if (!tapped()) return;
-    os_unfair_lock_lock(&sg_speedChangesLock);
-    if ((float)speed != sg_speed) {
-        sg_speedChanges[sg_speedChangeCount++ % kSpeedChanges] = (SpeedChange){CFAbsoluteTimeGetCurrent(), sg_speed};
+    // Spotify's clock is right until the speed leaves 1x, so it is read before.
+    SPTPlayerState *state = SGPlayerState();
+    double position = state.position;
+    os_unfair_lock_lock(&sg_clockLock);
+    if (!sg_clock.on && !sg_clock.armed && speed != 1 && state && position >= 0) {
+        sg_clock = (typeof(sg_clock)){.on = YES, .position = position, .played = playedSeconds()};
+        sg_clockTrack = trackOf(state);
     }
+    if ((float)speed != sg_speed) sg_speedChangedAt = CFAbsoluteTimeGetCurrent();
+    os_unfair_lock_unlock(&sg_clockLock);
     sg_speed = (float)speed;
     storeFloat(&sg_speedBits, sg_speed);
-    os_unfair_lock_unlock(&sg_speedChangesLock);
     apply();
-}
-
-// Song seconds that -position, running all the time since `stamp` at today's speed, counts too many (negative)
-// or too few: each stretch before a change since then played at the speed before it.
-static double speedCorrection(CFAbsoluteTime stamp) {
-    double seconds = 0;
-    os_unfair_lock_lock(&sg_speedChangesLock);
-    float now = loadFloat(&sg_speedBits);
-    CFAbsoluteTime from = stamp;
-    for (unsigned i = MIN(sg_speedChangeCount, (unsigned)kSpeedChanges); i > 0; i--) {
-        SpeedChange change = sg_speedChanges[(sg_speedChangeCount - i) % kSpeedChanges];
-        if (change.at <= from) continue;
-        seconds += (change.before - now) * (change.at - from);
-        from = change.at;
-    }
-    os_unfair_lock_unlock(&sg_speedChangesLock);
-    return seconds;
 }
 
 float SGPlayerPitch(void) {
@@ -1027,14 +1047,49 @@ static _Thread_local BOOL sg_correcting;
     sg_correcting = YES;
     double position = %orig;
     sg_correcting = NO;
-    NSDate *stamp = self.timestamp;
-    if (position < 0 || self.isPaused || !stamp) return position;
-    double correction = speedCorrection(stamp.timeIntervalSinceReferenceDate);
-    if (correction == 0) return position;
-    // Spotify's own speed, a podcast's, runs under ours.
-    float ours = loadFloat(&sg_speedBits);
-    double rate = self.playbackSpeed, spotify = ours > 0 && ours != 1 ? rate / ours : rate;
-    return MAX(0, position + correction * spotify);
+    if (position < 0) return position;
+    NSString *track = trackOf(self);
+    double played = playedSeconds();
+    CFAbsoluteTime stamp = self.timestamp.timeIntervalSinceReferenceDate;
+    double asOf = self.positionAsOfTimestamp, speed = self.isPaused ? 0 : self.playbackSpeed;
+    os_unfair_lock_lock(&sg_clockLock);
+    BOOL seeked = NO;
+    if (stamp > sg_lastReport.stamp) {
+        if (sg_lastReport.stamp > sg_speedChangedAt) seeked = fabs(asOf - (sg_lastReport.asOf + (stamp - sg_lastReport.stamp) * sg_lastReport.speed)) > kSeekGap;
+        sg_lastReport = (typeof(sg_lastReport)){stamp, asOf, speed};
+    }
+    BOOL seekedAway = sg_clock.on && seeked;
+    if (seekedAway || (sg_clock.on && ![track isEqualToString:sg_clockTrack])) {
+        sg_clock = (typeof(sg_clock)){.armed = loadFloat(&sg_speedBits) != 1};
+    }
+    if (!sg_clock.on && sg_clock.armed && stamp >= sg_clock.notBefore) {
+        sg_clock = (typeof(sg_clock)){.on = YES, .position = position, .played = played};
+        sg_clockTrack = track;
+    }
+    // Paused too: the paused report is as far behind.
+    if (sg_clock.on) position = sg_clock.position + played - sg_clock.played;
+    os_unfair_lock_unlock(&sg_clockLock);
+    if (seekedAway) SGLog(@"speed: Spotify moved to %.1f s without a seek here; its clock starts over", asOf);
+    return position;
+}
+%end
+
+%hook SPTEsperantoPlayer
+- (id)seekTo:(double)position relative:(long long)relative options:(id)options creatorTimestampPositionMs:(double)creator {
+    handBack();
+    return %orig;
+}
+- (id)skipToNextTrackWithOptions:(id)options track:(id)track loggingParams:(id)params {
+    handBack();
+    return %orig;
+}
+- (id)skipToPreviousTrackWithOptions:(id)options track:(id)track loggingParams:(id)params {
+    handBack();
+    return %orig;
+}
+- (id)stop {
+    handBack();
+    return %orig;
 }
 %end
 

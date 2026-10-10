@@ -172,9 +172,7 @@ static void layoutTitle(UIView *header, UIView *spotifyTitle, CGFloat leading, C
 #pragma mark - the two headers
 
 static BOOL isFace(UIView *view) {
-    static Class faceClass;
-    if (!faceClass) faceClass = NSClassFromString(@"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer");
-    return faceClass && [view isKindOfClass:faceClass];
+    return SGRIsAvatar(view);
 }
 
 // The root header's controls at its trailing edge, the avatar last, and the title before them. Answers what it

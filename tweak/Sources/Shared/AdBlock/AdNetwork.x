@@ -1,11 +1,12 @@
 // Spotify's responses on their way in, through the URLSession delegates it reads them by:
-// SPTDataLoaderService for most of spclient, HttpClientURLSession for what some regions route the
-// other way. A request for an ad is answered empty. With Spoof Premium on, the bootstrap
-// and customize bodies are rewritten by Premium.m before the client sees them, the endpoints the
-// server would use to log the account out are answered as if they succeeded, and past the first
-// thirty seconds the re-fetches that could bring the real state back are canceled before they
-// leave. Feeds go through Feeds.m. Everything here is EeveeSpotify's, less its Ably hooks, which
-// it does not turn on for 9.1 either.
+// SPTDataLoaderService and HttpClientURLSession for the app's own requests, and
+// SPTCoreURLSessionDataDelegate for the C++ core's, which fetch the ad config (ads/v2/config and
+// ad-logic/state/config, device 2026-10-10). A request for an ad is answered
+// empty. With Spoof Premium on, the bootstrap and customize bodies are rewritten by Premium.m
+// before the client sees them, the endpoints the server would use to log the account out are
+// answered as if they succeeded, and past the first thirty seconds the re-fetches that could bring
+// the real state back are canceled before they leave. Feeds go through Feeds.m. Everything here is
+// EeveeSpotify's, less its Ably hooks, which it does not turn on for 9.1 either.
 #import "Core/SGCore.h"
 #import "AdBlock.h"
 
@@ -13,7 +14,7 @@ static BOOL ads, premium;
 static NSDate *started;
 static NSObject *cacheLock;
 static NSData *cachedCustomize;   // the last rewritten customize body, for a 304 and the re-fetches
-static char kBufferKey, kServedKey, kPassKey;
+static char kBufferKey, kServedKey, kPassKey, kCoreAdKey;
 
 typedef NS_ENUM(NSInteger, SGNet) { SGNetPass, SGNetBlock, SGNetPatch };
 
@@ -51,11 +52,27 @@ static NSString *const adPaths[] = {
     @"/upgrade-component/", @"/marketing/", @"/home-ads/", @"/search-ads/",
 };
 
+// Esperanto service names use dot/underscore-separated identifiers as well as URL
+// path segments. A word-boundary regex alone would not split underscores. Match
+// whole ad/slot tokens after /esperanto/, never the "ad" inside load or metadata.
+static BOOL isEsperantoAd(NSString *path) {
+    NSRange marker = [path rangeOfString:@"/esperanto/"];
+    if (marker.location == NSNotFound) return NO;
+    static NSRegularExpression *tokens;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        tokens = [NSRegularExpression regularExpressionWithPattern:@"(?:^|[/._-])(?:ads?|slots?)(?=$|[/._-])"
+                                                          options:0 error:NULL];
+    });
+    NSString *route = [path substringFromIndex:NSMaxRange(marker)];
+    return [tokens firstMatchInString:route options:0 range:NSMakeRange(0, route.length)] != nil;
+}
+
 static BOOL isAd(NSURL *url, NSString *path) {
     for (size_t i = 0; i < sizeof(adPaths) / sizeof(adPaths[0]); i++) {
         if (has(path, adPaths[i])) return YES;
     }
-    if (has(path, @"/esperanto/") && (has(path, @"ad") || has(path, @"slot"))) return YES;
+    if (isEsperantoAd(path)) return YES;
     NSString *host = url.host.lowercaseString ?: @"";
     return has(host, @"doubleclick") || has(host, @"googlesyndication") || [host hasPrefix:@"aet."]
         || [@[@"ad.spotify.com", @"ads.spotify.com", @"aet.spotify.com"] containsObject:host];
@@ -101,6 +118,7 @@ static NSData *blockedReply(NSString *path) {
 static NSData *patched(NSURL *url, NSData *body) {
     NSString *path = url.path.lowercaseString ?: @"";
     if (isFeed(path)) return SGStripFeed(body);
+    SGAdBlockSawOne(@"Config rewrites");
     NSData *result = isBootstrap(path) ? SGPatchBootstrap(body) : SGPatchCustomize(body);
     if (!result) {
         SGLog(@"could not rewrite %@, passed through", path);
@@ -160,6 +178,7 @@ static void complete(id<NSURLSessionDataDelegate> delegate, NSURLSession *sessio
         finish(nil);
         return;
     }
+    SGAdBlockSawOne(@"Requests");
     switch (classify(url)) {
         case SGNetBlock:
             SGAdBlockCountOne(@"Requests");
@@ -215,6 +234,32 @@ static void complete(id<NSURLSessionDataDelegate> delegate, NSURLSession *sessio
 }
 %end
 
+// The C++ core's requests: most of Spotify's traffic, the access point lookup among it. Only its ad
+// requests are touched. Each gets an empty 200 of the mod's own in place of the server's headers and
+// body. Spoof Premium's rules stay off this path, and a failed request keeps its error.
+%hook SPTCoreURLSessionDataDelegate
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))handler {
+    NSURL *url = task.currentRequest.URL;
+    if (ads && isAd(url, url.path.lowercaseString ?: @"")) {
+        objc_setAssociatedObject(task, &kCoreAdKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        response = [[NSHTTPURLResponse alloc] initWithURL:url statusCode:200 HTTPVersion:@"HTTP/2.0" headerFields:@{}];
+    }
+    %orig(session, task, response, handler);
+}
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
+    if (!objc_getAssociatedObject(task, &kCoreAdKey) || objc_getAssociatedObject(task, &kPassKey)) %orig;
+}
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+    if (!error && objc_getAssociatedObject(task, &kCoreAdKey)) {
+        SGAdBlockSawOne(@"Requests");
+        SGAdBlockCountOne(@"Requests");
+        SGLog(@"answered the core's %@ empty", task.currentRequest.URL.path);
+        deliver((id)self, session, task, [NSData data]);
+    }
+    %orig;
+}
+%end
+
 #pragma mark - before a request leaves
 
 // The re-fetches that could put the real product state back, or drop the push token, use sessions
@@ -228,6 +273,7 @@ static void complete(id<NSURLSessionDataDelegate> delegate, NSURLSession *sessio
     BOOL spotify = has(host, @"spotify") || has(host, @"spclient");
     if (spotify && elapsed() > 30 && (has(path, @"deletetoken") || has(path, @"signup/public") || has(path, @"pses/screenconfig")
                                       || isCustomize(path) || has(host, @"apresolve"))) {
+        SGAdBlockSawOne(@"Requests");
         SGAdBlockCountOne(@"Requests");
         SGLog(@"canceled %@%@ before it left", host, path);
         [self cancel];
@@ -287,5 +333,6 @@ static NSURLRequest *unconditional(NSURLRequest *request) {
         Method own = local ? class_getInstanceMethod(local, selector) : NULL;
         if (own && own != class_getInstanceMethod(NSURLSession.class, selector)) %init(PremiumLocalRequests);
     }
-    SGRequireClasses(@[@"SPTDataLoaderService", @"_TtC26Connectivity_HttpClientKit20HttpClientURLSession"]);
+    SGRequireClasses(@[@"SPTDataLoaderService", @"_TtC26Connectivity_HttpClientKit20HttpClientURLSession",
+                       @"SPTCoreURLSessionDataDelegate"]);
 }

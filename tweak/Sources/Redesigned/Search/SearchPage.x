@@ -104,12 +104,10 @@ static UILabel *titleIn(UIStackView *row) {
 static void layoutHeader(UIStackView *row) {
     vanish(sg_scrim);
 
-    static Class faceClass;
-    if (!faceClass) faceClass = NSClassFromString(@"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer");
     UIView *face = nil;
     NSString *text = titleText(row);
     for (UIView *part in row.arrangedSubviews) {
-        if (faceClass && [part isKindOfClass:faceClass]) face = part;
+        if (SGRIsAvatar(part) && !face) face = part;
         else vanish(part);
     }
     if (row.semanticContentAttribute != UISemanticContentAttributeForceRightToLeft) {

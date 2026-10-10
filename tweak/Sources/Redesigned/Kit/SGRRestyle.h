@@ -46,6 +46,11 @@ BOOL SGRObserveLayout(UIView *view, void (^laidOut)(UIView *view));
 // left `root` or changed its identifier. nil when there is none; a miss is not cached.
 UIView *SGRFindByIdentifier(UIView *root, NSString *identifier, const void *cacheKey);
 
+// Whether `view` is the profile avatar that opens the side drawer, in the Home, Search and Library headers. Known by
+// its identifier, which every version gives it: 9.1.88 draws it in an AdaptiveFaceContainer, 9.1.90 in an Encore
+// button around a listening-activity pulse, which a check by class alone took for something else.
+BOOL SGRIsAvatar(UIView *view);
+
 // A view that draws only a shadow, for a view whose own layer clips (rounded artwork): made once per
 // host under `key`, inserted at the bottom of `host`. The caller gives it its frame and transform; its
 // shadowPath follows its bounds and cornerRadius.
