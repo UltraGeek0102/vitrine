@@ -28,7 +28,14 @@
 // Under the text rather than the whole row, as the Music app draws it; the trailing end clears the page margin.
 static const CGFloat kHairline = 0.5, kHairlineGap = 12;
 
-static char kRowKey, kArtKey, kSubtitleKey, kLineKey, kToolbarKey;
+static char kRowKey, kTrackRowKey, kArtKey, kArtHolderKey, kSubtitleKey, kLineKey, kToolbarKey;
+
+@interface SGRRowArtHolder : NSObject
+@property (nonatomic, weak) UIView *view;
+@end
+
+@implementation SGRRowArtHolder
+@end
 
 static UIView *identified(UIView *root, NSString *identifier, const void *cacheKey) {
     return SGRFindByIdentifier(root, identifier, cacheKey);
@@ -58,14 +65,35 @@ static void applyHairline(UIView *row, CGFloat leading) {
     [CATransaction commit];
 }
 
+// Where the artwork has no Encore.ImageView of its own (Track.Row): the holder the picture is drawn in, a private
+// class of the row kit that is told by its name. Kept on the row, as the lookups by identifier are.
+static UIView *artHolderIn(UIView *row) {
+    SGRRowArtHolder *box = objc_getAssociatedObject(row, &kArtHolderKey);
+    UIView *cached = box.view;
+    if (cached && [cached isDescendantOfView:row]) return cached;
+    __block UIView *found = nil;
+    SGForEachView(row, ^(UIView *v) {
+        if (!found && [NSStringFromClass(v.class) hasSuffix:@"ImageViewHolder"]) found = v;
+    });
+    if (found) {
+        if (!box) {
+            box = [SGRRowArtHolder new];
+            objc_setAssociatedObject(row, &kArtHolderKey, box, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        box.view = found;
+    }
+    return found;
+}
+
 static void applyRow(UIView *cell) {
     clearSurface(cell);
-    UIView *row = identified(cell, @"Encore.ListRow", &kRowKey);
+    // A playlist's row is an Encore.ListRow; the songs liked by one artist have a Track.Row of the same kit.
+    UIView *row = identified(cell, @"Encore.ListRow", &kRowKey) ?: identified(cell, @"Track.Row", &kTrackRowKey);
     if (!row) return;
     clearSurface(row);
 
     CGFloat leading = SGRSideMargin + 48 + kHairlineGap;
-    UIView *art = identified(row, @"Encore.ImageView", &kArtKey);
+    UIView *art = identified(row, @"Encore.ImageView", &kArtKey) ?: artHolderIn(row);
     if (art) {
         if (art.layer.cornerRadius != SGRRadiusThumb) {
             art.layer.cornerRadius = SGRRadiusThumb;
@@ -107,8 +135,20 @@ static void applyRow(UIView *cell) {
 }
 %end
 
+// The rows of the songs liked by one artist are another cell (a UITableView's, Track.Row painted the base surface)
+// with the same row kit in it, so they get the playlist's row: no paint, rounded artwork, the hairline.
+%hook SPTEncoreSwipeableTableViewCell
+- (void)layoutSubviews {
+    %orig;
+    UIView *cell = (UIView *)self;
+    if (!sgr_playlistRoot || !SGIsInside(cell, sgr_playlistRoot)) return;
+    SGRClearCellPaint(cell);
+    applyRow(cell);
+}
+%end
+
 %ctor {
     if (!SGRedesignedUI()) return;
     %init;
-    SGRequireClasses(@[@"_TtC35ListUXPlatform_FreeTierPlaylistImpl25ElementCollectionViewCell"]);
+    SGRequireClasses(@[@"_TtC35ListUXPlatform_FreeTierPlaylistImpl25ElementCollectionViewCell", @"SPTEncoreSwipeableTableViewCell"]);
 }

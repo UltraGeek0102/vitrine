@@ -3,6 +3,7 @@
 // line's -at at -rate, and holds at -pauseAt for -holdFor seconds before it runs on.
 #import <UIKit/UIKit.h>
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 
 UIColor *SGRAccentColor(void) { return nil; }
 
@@ -15,6 +16,8 @@ void SGPlayFeedback(NSInteger feedback) {}   // the name it has had since Haptic
 // -credit names the source (Show source is -spotifyglass.lyricsCredit 1); one naming Spicy Lyrics is
 // required, so it shows either way, and links to two people, as SpicyLyrics.m's community syncs do.
 NSString *SGLyricsCreditFor(NSString *trackID) { return [NSUserDefaults.standardUserDefaults stringForKey:@"credit"] ?: @"the harness"; }
+NSNotificationName const SGLyricsSourceChosenNotification = @"spotifyglass.lyricsSourceChosen";
+NSString *SGLyricsLeadArtist(NSString *artist) { return artist; }
 // LyricsSources.h's, declared here: that header's SPTPlayerTrack clashes with the track stub below.
 @interface SGLyricsLink : NSObject
 @property (nonatomic, copy) NSString *title;
@@ -39,10 +42,24 @@ void SGLyricsOpenCreditLinks(NSArray<SGLyricsLink *> *links, UIView *from) { NSL
 NSString *SGLyricsTranslationLanguage(void) { return [NSUserDefaults.standardUserDefaults stringForKey:@"translateTo"]; }
 
 // -gemini 1: a Gemini key is set, and Translate with Gemini answers each line with itself, marked.
-BOOL SGGeminiKeySet(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"gemini"]; }
-NSString *SGLyricsGeminiLanguage(void) { return SGLyricsTranslationLanguage() ?: @"en"; }
-void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
-                                 void (^done)(NSArray<NSString *> *translations, NSString *error)) {
+BOOL SGAITranslatorReady(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"gemini"]; }
+NSString *SGAITranslatorName(void) { return @"Gemini"; }
+NSString *SGAITranslatorRecipient(void) { return @"Google"; }
+@implementation SGTranslationSource
++ (instancetype)by:(NSString *)by model:(NSString *)model made:(NSDate *)made {
+    SGTranslationSource *source = [self new];
+    [source setValue:by forKey:@"by"];
+    [source setValue:model forKey:@"model"];
+    [source setValue:made forKey:@"made"];
+    return source;
+}
+- (NSString *)name { return self.model ? [NSString stringWithFormat:@"%@ (%@)", self.by, self.model] : self.by ?: @"Unknown"; }
+- (BOOL)deletable { return YES; }
+@end
+SGTranslationSource *SGAITranslatorSource(void) { return [SGTranslationSource by:@"gemini" model:@"harness" made:nil]; }
+NSString *SGLyricsTranslationTarget(void) { return SGLyricsTranslationLanguage() ?: @"en"; }
+void SGLyricsTranslateWithAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                             void (^done)(NSArray<NSString *> *translations, NSString *error)) {
     NSMutableArray<NSString *> *translations = [NSMutableArray array];
     for (SGKaraokeLine *line in lines) [translations addObject:[@"Gemini: " stringByAppendingString:SGKaraokeLineText(line)]];
     // -geminiDelay S: as late as a whole song through the real API can be.
@@ -56,7 +73,8 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
 
 // -onDevice 1 / -intelligence 1: Translate on iPhone and Apple Intelligence are offered, each answering every
 // line with itself, marked.
-@interface SGOnDeviceTranslation : NSObject
+@interface SGOnDeviceTranslation (Harness)
++ (void)answer:(NSArray<NSString *> *)lines as:(NSString *)mark done:(void (^)(NSArray<NSString *> *, NSString *))done;
 @end
 @implementation SGOnDeviceTranslation
 + (BOOL)translationAvailable { return [NSUserDefaults.standardUserDefaults boolForKey:@"onDevice"]; }
@@ -81,9 +99,14 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
 }
 @end
 // Nothing is kept between runs of the harness.
-void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
+SGTranslationSource *SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) { return nil; }
 NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";
-void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
+SGTranslationSource *SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines, SGTranslationSource *source) {
+    return [SGTranslationSource by:source.by model:source.model made:[NSDate date]];
+}
+void SGLyricsDeleteSavedTranslation(NSString *track, NSString *language) {
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
+}
 
 // Line meanings: -title and -artist name the track Genius is searched for, and the setting's key
 // (-spotifyglass.lyricsMeanings 3) turns them on.

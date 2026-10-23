@@ -4,6 +4,8 @@
 #import "App/Onboarding/Onboarding.h"
 #import "Shared/AutoMix/AutoMix.h"
 #import "Shared/Lossless/LosslessQuality.h"
+#import "Shared/LyricsSources/LyricsSources.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 
 // Every key of the mod's is under one prefix, so a reset is a sweep of the defaults with the stock
 // marker of SGPrefs.h left behind; the hooks read them at launch, so it ends in a restart.
@@ -32,6 +34,20 @@ static void confirmReset(void) {
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
+// Reset all leaves the Keychain alone, so a key outlives a reset; this takes every item Vitrine keeps there.
+static void confirmClearKeychain(void) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Clear Keychain?"
+                                                                  message:@"The Gemini, OpenAI-compatible and Anthropic API keys, the OpenAI-compatible server and the Spicy Lyrics key are removed from this iPhone. Settings stay as they are."
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Clear Keychain" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        SGAIForgetKeys();
+        SGSpicyLyricsForgetKey();
+        SGLog(@"reset: keychain cleared");
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [SGTopController() presentViewController:alert animated:YES completion:nil];
+}
+
 static SGModRow *withSymbol(SGModRow *row, NSString *symbol) {
     row.symbol = symbol;
     return row;
@@ -42,6 +58,8 @@ static SGModRow *withSymbol(SGModRow *row, NSString *symbol) {
 UIViewController *SGAboutPage(void) {
     SGModRow *reset = withSymbol(SGActionRow(@"Reset all settings", nil, ^{ confirmReset(); }), @"trash");
     reset.color = SGRed();
+    SGModRow *clearKeys = withSymbol(SGActionRow(@"Clear Keychain", nil, ^{ confirmClearKeychain(); }), @"key");
+    clearKeys.color = SGRed();
     NSString *spotify = SGSpotifyVersion();
     if ([SGSpotifyLikelyWorksVersions containsObject:spotify]) spotify = [spotify stringByAppendingString:@", likely works"];
     else if (![SGSpotifySupportedVersions containsObject:spotify]) spotify = [NSString stringWithFormat:@"%@, made for %@", spotify, SGSpotifyMadeFor];
@@ -74,6 +92,6 @@ UIViewController *SGAboutPage(void) {
             withSymbol(SGActionRow(@"Share diagnostics", @"For a bug report: versions, ad counts, this launch's log and Spotify's config. Song names can show.",
                                    ^{ SGShareDiagnostics(); }), @"stethoscope"),
         ]),
-        SGSection(nil, @[reset]),
+        SGSection(nil, @[clearKeys, reset]),
     ] footer:nil];
 }

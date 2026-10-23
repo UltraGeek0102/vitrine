@@ -19,6 +19,28 @@ static const CGFloat kGlyphsHalf = 14;
 // The slider draws its track this far above its own middle (6.5px measured on the phone), so the glyphs go up with it.
 static const CGFloat kTrackAbove = 2;
 
+// iOS 26's thumbless slider is the one the progress bar above and the Music app's volume use: it grows under the finger
+// and drags from anywhere on the track. MPVolumeView makes its slider when it lays out and may make another later, so
+// the style goes on after each of its layouts.
+@interface SGRVolumeView : MPVolumeView
+@end
+
+@implementation SGRVolumeView
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    if (@available(iOS 26.0, *)) {
+        for (UISlider *slider in self.subviews) {
+            if (![slider isKindOfClass:UISlider.class] || slider.sliderStyle == UISliderStyleThumbless) continue;
+            slider.sliderStyle = UISliderStyleThumbless;
+            slider.minimumTrackTintColor = UIColor.whiteColor;
+            slider.maximumTrackTintColor = [UIColor colorWithWhite:1 alpha:0.22];
+        }
+    }
+}
+
+@end
+
 @interface SGRVolumeRow : UIView
 @end
 
@@ -57,14 +79,17 @@ static UIImageView *glyph(NSString *symbol) {
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
-    _volume = [MPVolumeView new];
+    _volume = [SGRVolumeView new];
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     _volume.showsRouteButton = NO;
 #pragma clang diagnostic pop
-    [_volume setMinimumVolumeSliderImage:trackImage(UIColor.whiteColor) forState:UIControlStateNormal];
-    [_volume setMaximumVolumeSliderImage:trackImage([UIColor colorWithWhite:1 alpha:0.22]) forState:UIControlStateNormal];
-    [_volume setVolumeThumbImage:thumbImage() forState:UIControlStateNormal];
+    if (@available(iOS 26.0, *)) {
+    } else {
+        [_volume setMinimumVolumeSliderImage:trackImage(UIColor.whiteColor) forState:UIControlStateNormal];
+        [_volume setMaximumVolumeSliderImage:trackImage([UIColor colorWithWhite:1 alpha:0.22]) forState:UIControlStateNormal];
+        [_volume setVolumeThumbImage:thumbImage() forState:UIControlStateNormal];
+    }
     _quiet = glyph(@"speaker.fill");
     _loud = glyph(@"speaker.wave.3.fill");
     [self addSubview:_quiet];

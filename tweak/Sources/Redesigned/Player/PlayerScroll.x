@@ -6,6 +6,11 @@
 // instead of seeking (issue #172). A scroll view lets a UIControl in it track a touch while its own pan
 // runs on the same touch, so the list's pan is turned off from the moment the slider tracks a touch until
 // it lets go.
+//
+// Spotify's tap-to-scroll band, a plain view over the bottom 55pt drawn after the list, scrolls the list
+// down a step on a tap. With the list held at the top that step is taken straight back, and the band
+// covers the lower half of the footer's glyphs, which the redesign lowers into it (PlayerFooter.x). So the
+// band takes no touches at all; they fall to the list, where the footer's reach and the dismiss pull are.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 
@@ -50,6 +55,13 @@ static void holdAtTop(UIScrollView *list) {
 - (void)scrollViewDidScroll:(UIScrollView *)list {
     holdAtTop(list);
     %orig;
+}
+%end
+
+%hook _TtC21NowPlaying_ScrollImpl28NPVTapToScrollViewController
+- (void)viewDidLoad {
+    %orig;
+    ((UIViewController *)self).view.userInteractionEnabled = NO;
 }
 %end
 
@@ -107,6 +119,7 @@ static void scrubEnded(void) {
     %init;
     SGRequireClasses(@[
         @"_TtC21NowPlaying_ScrollImpl23NPVScrollViewController",
+        @"_TtC21NowPlaying_ScrollImpl28NPVTapToScrollViewController",
         @"_TtCO17NowPlaying_ECMKit11ProgressBar6Slider",
     ]);
 }

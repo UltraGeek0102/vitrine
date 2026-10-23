@@ -2,7 +2,8 @@
 // laid out the way the Music app lays a playlist out. Liked Songs and a playlist of the user's own are the
 // same page (trees/clean/liked-songs/01.txt, own-playlist/01.txt: one FTPViewController, one
 // SPTFreeTierPlaylistEncoreHeaderViewController), so one redesign covers all three. Album and artist pages
-// are built by another framework and are left alone.
+// are built by another framework and are left alone. The page of the songs the user liked by one artist
+// (CollectionArtist_ArtistImpl) is the same header kit with no cover, like Liked Songs, and is given the same files.
 //
 //     PlaylistField.x   the artwork field behind the whole page, the artwork it is read from, the flags
 //                       the screen forces

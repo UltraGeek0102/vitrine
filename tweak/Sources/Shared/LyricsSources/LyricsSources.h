@@ -13,6 +13,8 @@
 #define SGKeyLyricsProviders @"spotifyglass.lyricsProviders"
 // Offers the lyrics card on tracks Spotify itself has no lyrics for.
 #define SGKeyLyricsAllTracks @"spotifyglass.lyricsAllTracks"
+// The walk goes on past a line-timed answer to the first source with words timed; read by every walk.
+#define SGKeyLyricsPreferWordTiming @"spotifyglass.lyricsPreferWordTiming"
 // Names the source the shown lines came from, on the full screen page.
 #define SGKeyLyricsCredit @"spotifyglass.lyricsCredit"
 // The language a line's translation is asked for in, as an index into SGLyricsTranslationLanguages;
@@ -48,6 +50,9 @@
 @property (nonatomic, copy) NSString *title, *artist, *album;
 @property (nonatomic) NSInteger seconds;
 @property (nonatomic) BOOL instrumental;
+// The source picked for the track from the player's ⋯ answered with this (SGLyricsKeepChosen), so it stands
+// over Spotify's own lines however either is timed. The walk's own answer never is, a pick standing or not.
+@property (nonatomic) BOOL picked;
 @end
 
 // What is known about the track when a source is asked. Only trackID is always there; the rest is
@@ -71,6 +76,9 @@ typedef void (^SGLyricsAsk)(SGLyricsQuery *query, void (^done)(SGLyricsResult *r
 // Searches by title and artist, so it has nothing to ask with until someone has named the track.
 // Musixmatch matches by Spotify's id and can go without.
 @property (nonatomic) BOOL needsName;
+// Has only untimed lines, which never replace lines already found, so it is asked only while there are none
+// and Spotify has none of its own.
+@property (nonatomic) BOOL untimed;
 @property (nonatomic, copy) SGLyricsAsk ask;
 @end
 
@@ -91,8 +99,8 @@ BOOL SGLyricsMayHave(NSString *trackID);
 // comes; a walk already run or running is left alone. Safe from any thread.
 void SGLyricsPrefetch(NSString *trackID);
 // What Spotify's own metadata says of a track: 1 has lyrics, 0 has none, -1 not seen yet. The
-// player-track hook notes it; the request hook reads it to send a track Spotify has none for to
-// the donor. Safe from any thread.
+// player-track hook notes it, and the walk when it names a track; the request hook reads it to send a
+// track Spotify has none for to the donor, and the walk to pass Genius over. Safe from any thread.
 NSInteger SGLyricsSpotifyHas(NSString *trackID);
 void SGLyricsNoteSpotifyHas(NSString *trackID, BOOL has);
 // The remote-config values the lyrics feature forces while a source is on, nil for any other flag:
@@ -160,15 +168,26 @@ void SGMusixmatchTranslations(NSString *trackID, NSString *language, void (^done
 NSString *SGMusixmatchLineKey(NSString *text);
 // Copies of the lines with the translations matched in, in a new array; nil when none matched.
 NSArray<SGKaraokeLine *> *SGMusixmatchTranslatedLines(NSArray<SGKaraokeLine *> *lines, NSDictionary<NSString *, NSString *> *byLine);
+// A richsync body, the JSON array its richsync_body holds, as word timed lines; nil when it has none.
+SGLyricsResult *SGMusixmatchRichsyncResult(id body);
 extern SGLyricsAsk SGUnisonAsk;
 extern SGLyricsAsk SGNetEaseAsk;
 extern SGLyricsAsk SGLrcLibAsk;
 extern SGLyricsAsk SGSpicyLyricsAsk;
 extern SGLyricsAsk SGQQMusicAsk;
 extern SGLyricsAsk SGKuGouAsk;
+extern SGLyricsAsk SGGeniusAsk;
+// Genius.m. The rows of the lyrics in Genius's embed script, "" between stanzas and the [Chorus]
+// headings left out; nil when the script is not the shape it reads or holds no line.
+NSArray<NSString *> *SGGeniusEmbedRows(NSString *js);
 
 // LrcLib.m. Timed LRC as a synced result, nil when no line in it is timed.
 SGLyricsResult *SGLyricsLRCResult(NSString *lrc);
+// Lyricsfile.m. LRCLIB's Lyricsfile YAML as word timed lines; nil when it times no word, or is not
+// a Lyricsfile 1.0 this reads.
+NSArray<SGKaraokeLine *> *SGLyricsfileLines(NSString *yaml);
+// Untimed rows as a result: every start 0, a ♪ for each empty row.
+SGLyricsResult *SGLyricsPlainResult(NSArray<NSString *> *rows);
 // NetEase.m. Word timed lines from NetEase's yrc, or with krc from KuGou's KRC text; nil for none.
 NSArray<SGKaraokeLine *> *SGLyricsPieceLines(NSString *body, BOOL krc);
 // QQMusic.m, for it and KuGou. A title as the two are matched by: lowercased, without spaces,
@@ -183,15 +202,63 @@ BOOL SGLyricsSameArtist(NSString *credited, NSString *artist);
 // KuGou.m. A download's base64 content as lines, nil when it is not KRC or holds no timed line.
 NSArray<SGKaraokeLine *> *SGKuGouLines(NSString *content);
 
+// SongMatch.m, for the searches that answer with whole songs (Genius, LRCLIB). Text as the two are
+// matched by: letters and digits only, lowercase, accents gone and apostrophes closed up, so "Don’t"
+// and "dont" read alike across sources. A title with a version in brackets or after " - " set aside
+// ("Song (feat. X) - Remastered 2011" is "Song"), and the version words of the track's title, its
+// guests left out ("Old Town Road (feat. Billy Ray Cyrus) - Remix" is {remix}). How closely a song
+// a catalog names by title and artists is the track: 0 when it is not (another title, or none of its
+// artists is the track's lead), 1 for another version of it, 2 for the plain song, 3 for the same version.
+NSString *SGLyricsFoldedText(NSString *text);
+NSString *SGLyricsBareTitle(NSString *title);
+NSSet<NSString *> *SGLyricsTitleVersion(NSString *title);
+NSInteger SGLyricsSongRank(NSString *title, NSString *artist, NSString *songTitle, NSArray<NSString *> *songArtists);
+// Genius's search, which the lyrics source (Genius.m) and the line meanings (LyricsMeanings/Meanings.m)
+// both ask: its address, what it is asked for a track, and the song in its reply that is the track, as
+// SGLyricsSongRank tells: of several, the same version wins, then the plain song. nil when none is, or
+// the track is an instrumental or karaoke version, since Genius files the words under the song.
+#define SGGeniusSearchURL @"https://genius.com/api/search/song"
+NSDictionary<NSString *, NSString *> *SGGeniusSearchQuery(NSString *title, NSString *artist);
+NSNumber *SGGeniusSongIn(NSDictionary *response, NSString *title, NSString *artist);
+
 // SpicyLyrics.m. Its key in the order; whether the user's own API key is in the Keychain; what keeps
 // it from answering, for its row on the sources page ("Needs a key", why the key was refused), nil
 // while nothing does; the Lyrics page's row that sets or removes the key; and an API response as
 // lines, nil when it has none.
 extern NSString *const SGSpicyLyricsKey;
 BOOL SGSpicyLyricsKeySet(void);
+// Removes the key from the Keychain (Mod > Clear Keychain).
+void SGSpicyLyricsForgetKey(void);
 NSString *SGSpicyLyricsStatus(void);
 @class SGModRow;
 SGModRow *SGSpicyLyricsKeyRow(void);
 SGLyricsResult *SGSpicyLyricsResult(id root);
 
 UIViewController *SGLyricsSourcesPage(void);   // the ordered list on the Lyrics page
+
+// LyricsPick.m. The source picked for a track from the redesigned player's ⋯, which may be lower in the order
+// than the one that answered (issue #67). The pick is a track's id against a source's key, kept until Spotify
+// quits; a track's walk asks its picked source first, the rest of the order after it. Main queue.
+NSString *SGLyricsChosenSource(NSString *trackID);
+// Every source in the order is asked for the track at once, the answers kept for the last few tracks, and
+// `done` gets the ones with lines, by key, when all have answered or `wait` has passed.
+void SGLyricsOffers(NSString *trackID, NSTimeInterval wait, void (^done)(NSDictionary<NSString *, SGLyricsResult *> *offers));
+// Makes the offer of `key` the track's lyrics now, everywhere they show, and posts
+// SGLyricsSourceChosenNotification (object the track's id) once its lines are kept.
+void SGLyricsChooseSource(NSString *trackID, NSString *key);
+// Drops the track's pick and puts back what the order had chosen, shown before the first pick, the same way.
+void SGLyricsChooseAutomatic(NSString *trackID);
+// A walk under way at the track's first pick has ended with `lyrics`: that is what Automatic puts back.
+void SGLyricsNoteOrderChoice(NSString *trackID, SGLyricsResult *lyrics);
+// A walk found the track's pick `key` answering no lines, or switched off: the pick goes, so the menu shows
+// Automatic over the order's answer the walk goes on to. Nothing when the track's pick is another by now.
+void SGLyricsDropChoice(NSString *trackID, NSString *key);
+extern NSNotificationName const SGLyricsSourceChosenNotification;
+// LyricsSources.m, for LyricsPick.m: the query a walk would start with, and a picked answer kept as the walk's.
+SGLyricsQuery *SGLyricsQueryFor(NSString *trackID);
+// How many source requests have failed since launch; any thread.
+NSUInteger SGLyricsFailures(void);
+void SGLyricsKeepChosen(NSString *trackID, SGLyricsResult *result);
+// The walk's kept answer for the track: a result, NSNull for none, nil when not kept; and that put back.
+id SGLyricsKeptAnswer(NSString *trackID);
+void SGLyricsRestoreKept(NSString *trackID, id kept);

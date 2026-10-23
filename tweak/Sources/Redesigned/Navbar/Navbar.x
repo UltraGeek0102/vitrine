@@ -210,7 +210,9 @@ void SGRComposeTabBar(UIView *tabBar) {
     NSMutableArray<UIView *> *wanted = [NSMutableArray array];
     NSMutableSet<NSString *> *placed = [NSMutableSet set];
     NSMutableSet<NSString *> *keep = [NSMutableSet set];
-    NSSet<NSString *> *split = SGEnabled(SGRKeyNavbar) ? [NSSet setWithArray:SGRNavbarSplit()] : nil;
+    NSArray<NSDictionary *> *splitList = SGEnabled(SGRKeyNavbar) ? SGRNavbarSplit() : @[];
+    NSMutableSet<NSString *> *splitStock = [NSMutableSet set];
+    for (NSDictionary *entry in splitList) if (!entry[SGRNavbarURI] && [entry[SGRNavbarID] isKindOfClass:NSString.class]) [splitStock addObject:entry[SGRNavbarID]];
     NSMutableSet<UIView *> *apart = [NSMutableSet set];
 
     if (SGEnabled(SGRKeyNavbar)) {
@@ -226,11 +228,9 @@ void SGRComposeTabBar(UIView *tabBar) {
                 else custom[ident] = item = [[SGRTabItemView alloc] initWithEntry:entry];
                 [keep addObject:ident];
                 [wanted addObject:item];
-                if ([split containsObject:ident]) [apart addObject:item];
-            } else if (stockViews[ident]) {
+            } else if (stockViews[ident] && ![splitStock containsObject:ident]) {
                 stockViews[ident].hidden = hidden;
                 [wanted addObject:stockViews[ident]];
-                if ([split containsObject:ident]) [apart addObject:stockViews[ident]];
             }
         }
     }
@@ -238,10 +238,28 @@ void SGRComposeTabBar(UIView *tabBar) {
     // Spotify's own place, at the end, shown.
     for (NSString *ident in sg_stockOrder) {
         UIView *item = stockViews[ident];
-        if (!item || [wanted containsObject:item]) continue;
+        if (!item || [wanted containsObject:item] || [splitStock containsObject:ident]) continue;
         item.hidden = NO;
         [wanted addObject:item];
-        if ([split containsObject:ident]) [apart addObject:item];
+    }
+    // The split tabs, from their own list: the mod's own are separate from the bar's, Spotify's are shown.
+    NSMutableSet<NSString *> *placedApart = [NSMutableSet set];
+    for (NSDictionary *entry in splitList) {
+        NSString *ident = entry[SGRNavbarID];
+        if (![ident isKindOfClass:NSString.class] || [placedApart containsObject:ident]) continue;
+        [placedApart addObject:ident];
+        if (entry[SGRNavbarURI]) {
+            SGRTabItemView *item = custom[ident];
+            if (item) [item applyEntry:entry];
+            else custom[ident] = item = [[SGRTabItemView alloc] initWithEntry:entry];
+            [keep addObject:ident];
+            [wanted addObject:item];
+            [apart addObject:item];
+        } else if (stockViews[ident]) {
+            stockViews[ident].hidden = NO;
+            [wanted addObject:stockViews[ident]];
+            [apart addObject:stockViews[ident]];
+        }
     }
     for (NSString *ident in custom.allKeys) {
         if ([keep containsObject:ident]) continue;
@@ -440,6 +458,7 @@ void SGRLogTabBarRow(UIView *tabBar) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    SGRMigrateNavbarSplit();
     %init;
     SGRequireClasses(@[
         @"SPNavigationController",

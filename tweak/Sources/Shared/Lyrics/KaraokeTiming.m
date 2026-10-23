@@ -79,6 +79,47 @@ BOOL SGKaraokeUnspacedScript(NSString *text) {
     return text.length && [text rangeOfCharacterFromSet:unspacedScript()].location != NSNotFound;
 }
 
+@implementation SGKaraokePiece
+@end
+
+SGKaraokeLine *SGKaraokePieceLine(NSArray<SGKaraokePiece *> *pieces, NSInteger start, NSInteger end) {
+    NSMutableArray<SGKaraokeWord *> *words = [NSMutableArray array];
+    SGKaraokeWord *open = nil;   // the word the next piece runs on into
+    BOOL spaced = YES;           // a space has gone by, so the next word is not joined to the last
+    for (SGKaraokePiece *piece in pieces) {
+        if (piece.spaceBefore) {
+            open = nil;
+            spaced = YES;
+        }
+        // A source times a Chinese or Japanese syllable a piece at a time and never spaces them, so
+        // running them together would light a line up whole instead of sweeping it.
+        BOOL unspaced = SGKaraokeUnspacedScript(piece.text);
+        if (piece.text.length && open && !unspaced) {
+            open.text = [open.text stringByAppendingString:piece.text];
+            open.end = MAX(open.end, piece.end);
+        } else if (piece.text.length) {
+            SGKaraokeWord *word = [SGKaraokeWord new];
+            word.text = piece.text;
+            word.start = piece.start;
+            word.end = piece.end;
+            word.joined = !spaced;
+            [words addObject:word];
+            open = unspaced ? nil : word;
+            spaced = NO;
+        }
+        if (!piece.text.length || piece.spaceAfter) {
+            open = nil;
+            spaced = YES;
+        }
+    }
+    if (!words.count) return nil;
+    SGKaraokeLine *line = [SGKaraokeLine new];
+    line.words = words;
+    line.start = start;
+    line.end = MAX(end, words.lastObject.end);
+    return line;
+}
+
 // Thai, Lao, Burmese and Khmer, which leave no space between words either, but whose syllables are a
 // letter with marks around it: they are split where the system's dictionary finds a word, not a
 // character at a time.

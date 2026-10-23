@@ -128,12 +128,12 @@ void SGRHarnessPlayFrom(NSInteger ms) { SGKaraokeSeek(ms); }
 void SGLyricsMeaningsFor(NSString *trackID, NSArray<SGKaraokeLine *> *lines,
                          void (^done)(NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *byLine)) {}
 
-// Gemini translation and the settings framework's top controller: not part of the harness.
+// AI translation and the settings framework's top controller: not part of the harness.
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
-BOOL SGGeminiKeySet(void) { return NO; }
-NSString *SGLyricsGeminiLanguage(void) { return @"en"; }
-void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
-                                 void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+BOOL SGAITranslatorReady(void) { return NO; }
+NSString *SGLyricsTranslationTarget(void) { return @"en"; }
+void SGLyricsTranslateWithAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                             void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
 
 // Local files: no edits in the harness, so the name is all PlayerLyrics.x needs to watch for one.
 #import "Shared/LocalFiles/LocalFiles.h"

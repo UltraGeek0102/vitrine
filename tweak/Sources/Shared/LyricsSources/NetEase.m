@@ -47,43 +47,21 @@ NSArray<SGKaraokeLine *> *SGLyricsPieceLines(NSString *body, BOOL krc) {
         if (!head) continue;
         NSArray<NSTextCheckingResult *> *pieces = [piece matchesInString:row options:0 range:NSMakeRange(NSMaxRange(head.range), row.length - NSMaxRange(head.range))];
         NSInteger lineStart = [row substringWithRange:[head rangeAtIndex:1]].integerValue;
-        NSMutableArray<SGKaraokeWord *> *words = [NSMutableArray array];
-        SGKaraokeWord *open = nil;
-        BOOL spaced = YES;   // a space has gone by, so the next word is not joined to the last
+        NSMutableArray<SGKaraokePiece *> *timed = [NSMutableArray array];
         for (NSUInteger i = 0; i < pieces.count; i++) {
             NSUInteger from = NSMaxRange(pieces[i].range), to = i + 1 < pieces.count ? pieces[i + 1].range.location : row.length;
             NSString *raw = [row substringWithRange:NSMakeRange(from, to - from)];
-            NSString *text = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-            NSInteger start = [row substringWithRange:[pieces[i] rangeAtIndex:1]].integerValue + (krc ? lineStart : 0);
+            SGKaraokePiece *piece = [SGKaraokePiece new];
+            piece.text = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+            piece.start = [row substringWithRange:[pieces[i] rangeAtIndex:1]].integerValue + (krc ? lineStart : 0);
             // A piece of no length is still shown, for a moment.
-            NSInteger end = start + MAX([row substringWithRange:[pieces[i] rangeAtIndex:2]].integerValue, 1);
-            // yrc times a Chinese or Japanese syllable a piece at a time and never spaces them, so
-            // each one is a word of its own; only a spaced script runs its pieces together.
-            BOOL unspaced = SGKaraokeUnspacedScript(text);
-            if (text.length && open && !unspaced) {
-                open.text = [open.text stringByAppendingString:text];
-                open.end = end;
-            } else if (text.length) {
-                SGKaraokeWord *word = [SGKaraokeWord new];
-                word.text = text;
-                word.start = start;
-                word.end = end;
-                word.joined = !spaced;
-                [words addObject:word];
-                open = unspaced ? nil : word;
-                spaced = NO;
-            }
-            if (raw.length > text.length || !text.length) {
-                open = nil;
-                spaced = YES;
-            }
+            piece.end = piece.start + MAX([row substringWithRange:[pieces[i] rangeAtIndex:2]].integerValue, 1);
+            // A space ends the word after the piece, even one in front of it.
+            piece.spaceAfter = raw.length > piece.text.length;
+            [timed addObject:piece];
         }
-        if (!words.count) continue;
-        SGKaraokeLine *line = [SGKaraokeLine new];
-        line.words = words;
-        line.start = lineStart;
-        line.end = MAX(lineStart + [row substringWithRange:[head rangeAtIndex:2]].integerValue, words.lastObject.end);
-        [lines addObject:line];
+        SGKaraokeLine *line = SGKaraokePieceLine(timed, lineStart, lineStart + [row substringWithRange:[head rangeAtIndex:2]].integerValue);
+        if (line) [lines addObject:line];
     }
     return lines.count ? lines : nil;
 }

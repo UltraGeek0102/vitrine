@@ -280,9 +280,12 @@ static BOOL requestFromSpotify(NSString *trackID) {
             } else {
                 [sg_asking removeObject:trackID];
                 [sg_losses removeObjectForKey:trackID];
-                // Asked after the chain found plain text only: Spotify's replace it only when they are timed.
+                // Asked after the chain found plain text only: Spotify's replace it only when they are timed,
+                // and never a source picked for the track from the player's ⋯ that answered.
                 NSArray<SGKaraokeLine *> *kept = sg_lyrics[trackID];
-                if (lines && !(kept && SGKaraokeLinesTiming(kept) <= SGKaraokeLinesTiming(lines))) {
+                id answer = SGLyricsKeptAnswer(trackID);
+                BOOL picked = [answer isKindOfClass:SGLyricsResult.class] && [(SGLyricsResult *)answer picked];
+                if (lines && !picked && !(kept && SGKaraokeLinesTiming(kept) <= SGKaraokeLinesTiming(lines))) {
                     keep(trackID, lines);
                     SGLyricsSetCredit(trackID, @"Spotify");
                     return;
@@ -292,6 +295,18 @@ static BOOL requestFromSpotify(NSString *trackID) {
         });
     }] resume];
     return YES;
+}
+
+// Main queue only. The track's lines are forgotten, but for a look still out, and the track playing is asked
+// for again as on a first play.
+void SGKaraokeAskAgain(NSString *trackID) {
+    if (!trackID || [sg_looking containsObject:trackID]) return;
+    [sg_lyrics removeObjectForKey:trackID];
+    [sg_requested removeObject:trackID];
+    [sg_asking removeObject:trackID];
+    [sg_losses removeObjectForKey:trackID];
+    if ([trackID isEqualToString:SGKaraokePlayingTrack()]) SGKaraokeRequestLyrics(trackID);
+    announce(trackID);
 }
 
 void SGKaraokeAskSpotifyForTiming(NSString *trackID) {

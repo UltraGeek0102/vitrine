@@ -458,6 +458,12 @@ static void runChecks(SGRKaraokeView *karaoke, UIView *host) {
     CGFloat first = letters.firstObject.transform.ty, last = letters.lastObject.transform.ty;
     expect(letters.count == 4 && first < -1.5 && last > first + 0.25,
            [NSString stringWithFormat:@"its %lu letters rise in a wave (first %.2f, last %.2f)", (unsigned long)letters.count, first, last]);
+    // Sung through, the sweep's mask still leaves the glow room past the word on every side (issue #68).
+    ((void (*)(id, SEL, double))objc_msgSend)(lineView, NSSelectorFromString(@"showTime:"), line.words.lastObject.end + 100.0);
+    CGRect room = lit.layer.mask.frame;
+    expect(CGRectGetMinX(room) <= -30 && CGRectGetMinY(room) <= -30 && CGRectGetMaxY(room) >= lit.bounds.size.height + 30,
+           [NSString stringWithFormat:@"sung through, the sweep's mask leaves the glow room past the word (%@)", NSStringFromCGRect(room)]);
+    glow = lit.layer.shadowOpacity;
     [lineView setValue:@NO forKey:@"active"];
     expect(lit.layer.shadowOpacity == glow, @"the glow stays on as its line goes out, for the fade to carry it");
     after(0.8, ^{
@@ -505,7 +511,8 @@ static void runChecks(SGRKaraokeView *karaoke, UIView *host) {
         if ([item.title isEqualToString:@"Translate with Gemini"]) gemini = (UIAction *)item;
     }
     expect(gemini.subtitle.length > 0, [NSString stringWithFormat:@"the Gemini item says: %@", gemini.subtitle]);
-    ((void (*)(id, SEL))objc_msgSend)(karaoke, NSSelectorFromString(@"translateWithGemini"));
+    // The item's own handler, as a tap runs it: UIAction has no public way to run one.
+    ((UIActionHandler)[gemini valueForKey:@"handler"])(gemini);
     BOOL offered = NO;
     for (UIMenuElement *item in extras.menu.children) offered |= [item.title isEqualToString:@"Translate with Gemini"];
     expect(extras.configuration.showsActivityIndicator && !offered, @"while Gemini works the button spins and the item is gone");

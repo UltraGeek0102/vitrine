@@ -117,14 +117,17 @@ Shared:
                   pronunciation of a line, each keyed to the line by its itunes:key or lrc:key, the pronunciation
                   timed word by word (the translation taken in the Lyrics page's language); Musixmatch.m, matched by
                   Spotify's track id with an anonymous token, word timed where it has richsync; NetEase.m, word timing from yrc for what the others only line time; LrcLib.m, open and
-                  keyless and timed by the line, the floor under the rest. SpicyLyrics.m, Spicy Lyrics' Developer Platform
+                  keyless and timed by the line, by the word where a record carries a Lyricsfile (Lyricsfile.m reads its YAML), the floor under the rest; its search answers with whole songs, so only a record that is the track (SongMatch.m) can win. SpicyLyrics.m, Spicy Lyrics' Developer Platform
                   by track id on the user's own publishable key (Keychain), syllable timed where it has a sync, with
                   its pronunciations and translations; its credit, which its terms require, shows whatever Show source
                   says and opens the uploader's and maker's pages from a tap (both looks), its answers and misses are
                   kept per track, a rate limit is waited out and a refused key is left for 10 min, its reason on the
                   source's row; checked on the Mac against harness/spicy-lyrics/. QQMusic.m (line timed LRC) and KuGou.m (word timed KRC, unpacked with
                   zlib and read by NetEase.m's parser) for Chinese and other Asian songs, matched by title, singer
-                  and length; checked on the Mac against harness/lyrics-sources/. color-lyrics is answered with whichever won
+                  and length; checked on the Mac against harness/lyrics-sources/. Genius.m, last: untimed words for a track no
+                  other source has, the song found by the search the line meanings share (SGGeniusSongIn in SongMatch.m, whose match LRCLIB's search shares too)
+                  and the words read from its embed script, which is scraping (no API gives the text); checked on
+                  the Mac against harness/genius-lyrics/. color-lyrics is answered with whichever won
                   (LyricsHook.x): Spotify's own 200 gets our lines swapped in; a track Spotify's metadata says has none has
                   its request sent to a donor track that does, so the reply is a real 200 (a 404 answered as a 200 in the
                   delegate alone never showed the card on 9.1.78); a 404 for a track not seen yet is held until the chain
@@ -135,14 +138,17 @@ Shared:
                   source is on. In the redesign, with a translation language chosen, lines kept for the lyrics view with
                   no translation of their own take Musixmatch's community translations (Musixmatch.m), whichever
                   source won, Spotify's own included: matched by the line's folded text, as copies kept in place of the
-                  lines (KaraokeSource.x), which the view picks up
+                  lines (KaraokeSource.x), which the view picks up. The walk stops at the first timed answer; with
+                  Prefer word-by-word timing (off by default, read by every walk) it asks on to the first source with
+                  words timed and else keeps the finest it saw, the highest among equals (settled()). The redesigned
+                  player's ⋯ has Lyrics Source (LyricsPick.m): every source asked at once for the song playing, a pick
+                  shown at once and kept in memory until Spotify quits, and Automatic putting back what the order chose
     LyricsTranslation/ a song's lines translated from the lyrics' corner menu, for the lines no source translated, three
                   ways, each its own item: on the iPhone by Apple's Translate (iOS 26, the song's language told by
                   NaturalLanguage, both languages downloaded in the Translate app or the item says where to) and by Apple
                   Intelligence's model (iOS 26 where it is on and speaks the language; permissive guardrails for changing
                   the user's own text, 12 lines a session, greedy and capped at 60 tokens a line, exactly one string a line by a generation schema; Translate retried once, as its first ask can fail while it loads), both in
-                  OnDeviceTranslation.swift, the frameworks weak linked; and by Gemini on the user's own key (Keychain),
-                  whose prompt and menu item say the lyrics go to Google. The translate items show for every song with Translate any song on (SGKeyLyricsTranslateEverySong, off), else only for a song NaturalLanguage finds in another language than the Lyrics page's (or the iPhone's): one distinct line in five it is at least 80% sure of, or two in another script (a verse in Hangul among English), not the whole song's guess (short lines sway that: Havana reads as Dutch), so songs half in English count and a repeated chorus weighs as one line; Translate on iPhone translates from the language most of those lines are in and leaves lines already in the target as they are. Apple Intelligence's lines show and are saved a batch at a time, only lines without a translation are sent, and a batch it turns down is skipped (asking again sends only those lines). Every finished translation is kept by SavedTranslations.m in Caches/Vitrine/Translations, one JSON file a song and language mapping each line's text to its translation, the newest 200, synced when the song's lines are shown: each line knows whether its translation was made here (SGKaraokeLine.translationMade), and a made one with nothing saved is taken off, so the Lyrics page's Saved translations row deletes them at once, posting SGLyricsTranslationsDidChangeNotification as Translate any song does for the open lyrics to sync and redraw. Gemini's reply read and checked on the Mac
+                  OnDeviceTranslation.swift, the frameworks weak linked; and by an AI translator on the user's own key, picked on the Lyrics page (SGKeyAITranslator): Gemini, an OpenAI-compatible server (chat completions; OpenAI's unless a server URL is given, such as OpenRouter's or an Ollama on the network, which Spotify's ATS allows for local addresses) or Anthropic (the Messages API). Each provider is one entry of LyricsTranslation.m's table: its Keychain slot (one key each, never in the settings, so an export never has one), its model presets (the cheapest first; OpenAI-compatible has none and needs a model), its request and its reply's reader. The answer's shape is forced where the API can (Gemini a bare array, the others {"lines": [...]} by a strict schema), the reader takes either, and a 400 that names an optional field (Gemini's thinking level, OpenAI's schema or reasoning effort, Anthropic's output_config) is asked once more without them. The prompt is shared (Vitrine's with {language} and {count}, editable in a sheet, SGKeyAIPrompt) and the provider adds its sentence on the answer's shape; the model (spotifyglass.lyrics.<id>.model) and the server are read at each ask and checked as they are read, and the log names the provider, the model, the host and the prompt's SHA-256 prefix, never the key. Temperature is not offered: Anthropic's API turns it down and OpenAI's reasoning models take only the default. The menu item says where the lyrics go. The translate items show for every song with Translate any song on (SGKeyLyricsTranslateEverySong, off), else only for a song NaturalLanguage finds in another language than the Lyrics page's (or the iPhone's): one distinct line in five it is at least 80% sure of, or two in another script (a verse in Hangul among English), not the whole song's guess (short lines sway that: Havana reads as Dutch), so songs half in English count and a repeated chorus weighs as one line; Translate on iPhone translates from the language most of those lines are in and leaves lines already in the target as they are. Apple Intelligence's lines show and are saved a batch at a time, only lines without a translation are sent, and a batch it turns down is skipped (asking again sends only those lines). Every finished translation is kept by SavedTranslations.m in Caches/Vitrine/Translations, one JSON file a song and language with each line's text to its translation under "lines" and who made it and when ("by", "model", "made"; a file from before has the lines alone and reads as Unknown), the newest 200, synced when the song's lines are shown: each line knows whether its translation was made here (SGKaraokeLine.translationMade), and a made one with nothing saved is taken off, so the Lyrics page's Saved translations row deletes them at once, posting SGLyricsTranslationsDidChangeNotification as Translate any song does for the open lyrics to sync and redraw. The translate menu names who made a saved translation and when, and for one an AI made (or no one known) offers Delete This Translation, which removes the song's file and the launch's answer for it, so asking again sends the song. Gemini's reply read and checked on the Mac
                   against harness/lyrics-translation/
     LockScreenLyrics/ the line being sung in the system's now playing, and on iOS 26 the lyrics as the lock screen's
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
@@ -535,7 +541,7 @@ Redesigned:
                   the hooks reach, declines while the redesign runs, so the track falls to Spotify's other Free mode,
                   built from the units the redesign styles (PlayerFree.x, read from the binary, not yet seen on a Free
                   account). Animated artwork (PlayerMotion.x)
-                  runs the clip edge to edge from the top over its own last rows drawn on down, with a blur coming in
+                  runs the clip edge to edge from the top over the color of its last rows drawn on down, with a blur coming in
                   from the seam under the controls and over the whole clip behind the lyrics. The clip and the cover
                   cross over as one comes and the other goes, the clip from its poster frame before the video has
                   decoded one, and the Fluid field under a clip holds still and, once the clip has faded in, is hidden
@@ -607,6 +613,12 @@ Redesigned:
                   and the curation pills gone, and the track rows on the field with a hairline between them
                   (Playlist.h lists its files). Sort and Mix, the two of those pills the ⋯ menu does not already offer,
                   are put on that menu's own sheet instead, above Spotify's rows, and fire Spotify's own buttons.
+                  The page of the songs the user liked by one artist (CollectionArtist) is Liked Songs' header kit
+                  with no cover and goes through the same files: the neutral field, the wash and the bar's scrim
+                  gone, the one row of shuffle, Play and download, and its rows as the playlist's are. Its pinned ⋯
+                  opens the system menu, as every other redesigned page's does. Its download button is the plain one, not the Granular one, so its state is read from its
+                  owner's `currentStatus`, whose cases are its own (none, waiting, downloading, downloaded); it keeps no
+                  progress while it downloads, so the ring turns (Kit/SGRDownload.m).
                   Laid out on the Mac against harness/playlist/
     Album/        the album page laid out the same way, on the page the Creative Work Platform builds rather than the
                   playlist's, so it shares nothing with Playlist/ but the Kit: the cover full bleed dissolving into the
@@ -663,7 +675,9 @@ App:
 
 Every key a feature stores starts with `spotifyglass.`, whatever it holds: Reset all settings on
 the Mod page removes by that prefix and has no list to keep up to date. It leaves `SGKeyStock` behind,
-which makes every unset switch read off, so a reset is stock Spotify whatever switches exist.
+which makes every unset switch read off, so a reset is stock Spotify whatever switches exist. The API keys
+(each AI translator's, the OpenAI-compatible server, Spicy Lyrics') live in the Keychain, which a reset leaves
+alone; Clear Keychain beside it deletes each by its own service and keeps the settings.
 
 A hook reads its switch when it runs (`SGEnabled`, `SGHidden`, `SGFlag` from Core/SGPrefs.h), so a
 change shows after Spotify restarts; the tab editor on the Navbar page is the exception and applies as soon as the bar lays
@@ -858,7 +872,7 @@ Auto / Off / On control per flag (a text field for the number and text ones), an
 (the row reads out where the build stands and opens the changelog of everything newer than it, read
 from the releases Release Please cuts, with Check now, the release to get, all the releases and Tell
 me when one is out, the sheet a newer release brings up a few seconds after Spotify opens), the
-build and Spotify's version, the site and the repo, What's New and the welcome tour again, and Reset all
+build and Spotify's version, the site and the repo, What's New and the welcome tour again, Clear Keychain and Reset all
 settings. A flag switch on a page forces that one flag and off leaves Spotify's own value, so the All
 flags page is where a flag goes back to Auto. Spotify ships its newer design behind several flags at
 once, and the redesign is built on it (the glass navigation bar, the new player slider, the sheet style

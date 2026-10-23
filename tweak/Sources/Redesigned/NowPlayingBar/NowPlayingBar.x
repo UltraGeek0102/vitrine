@@ -530,13 +530,15 @@ static void styleNowPlayingBar(UIViewController *container) {
 // The page the bar stands in passes touches outside the bar through, and the bar in the tab bar's row is
 // below the page's bounds: a touch there reaches the bar only through this. Only the narrowed card takes
 // one: the container's view keeps the screen's width, and took the touches meant for the tab bar's circles.
+// Only the container's view moves to the row, by a transform; Spotify's layout view above it stays at the
+// bar's old place and took every touch there (#70), so a touch on nothing of the moved bar's goes through.
 %hook _TtC22NowPlaying_BarPageImplP33_CCC0D2EEA6D4725EECD8965E8C38C86D20TouchPassthroughView
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hit = %orig;
     UIView *moved = sg_inline;
-    if ((hit && hit != (UIView *)self) || ![moved isDescendantOfView:(UIView *)self]) return hit;
+    if (![moved isDescendantOfView:(UIView *)self] || (hit && [hit isDescendantOfView:moved])) return hit;
     UIView *inside = [moved hitTest:[(UIView *)self convertPoint:point toView:moved] withEvent:event];
-    return inside && inside != moved ? inside : hit;
+    return inside && inside != moved ? inside : nil;
 }
 %end
 

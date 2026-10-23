@@ -7,12 +7,16 @@
 //     Show Fluid Artwork, Show Animated Artwork, Show Visualizer
 //                             a button for each of the two the background is not, while it is one of the
 //                             three, named for what it switches to
+//     Lyrics Source           a song's lyrics from another source than the one the order chose (issue #67): its
+//                             items are the sources with lines for the song, asked only once the submenu opens
 //
 // The item says under its name what is not as Spotify plays it, so the menu reads as a settings summary.
 #import "Core/SGCore.h"
 #import "Redesigned/ContextMenu/ContextMenu.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
+#import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsSources/LyricsSources.h"
 #import "Player.h"
 
 static __weak UIView *sg_moreButton;   // the ⋯ the sliders' panel comes from
@@ -51,6 +55,58 @@ static UIAction *soundMenu(void) {
     return open;
 }
 
+// How long the submenu shows its loading row for the slowest sources before it lists the ones that answered.
+static const NSTimeInterval kOffersWait = 4;
+static NSString *sheetKind(void);
+
+static NSString *timingText(NSArray<SGKaraokeLine *> *lines) {
+    switch (SGKaraokeLinesTiming(lines)) {
+        case SGKaraokeTimingWords: return @"Word by word";
+        case SGKaraokeTimingLine: return @"Line by line";
+        default: return @"Not synced";
+    }
+}
+
+// Automatic, checked while nothing is picked and naming what the order chose, then the sources with lines for
+// the track, in the order, the one picked checked.
+static NSArray<UIMenuElement *> *sourceItems(NSString *track, NSDictionary<NSString *, SGLyricsResult *> *offers) {
+    NSString *current = SGLyricsChosenSource(track);
+    UIAction *automatic = [UIAction actionWithTitle:@"Automatic" image:nil identifier:nil
+                                            handler:^(UIAction *action) { SGLyricsChooseAutomatic(track); }];
+    automatic.subtitle = current ? @"As the order chooses" : SGLyricsCreditFor(track);
+    automatic.state = current ? UIMenuElementStateOff : UIMenuElementStateOn;
+    NSMutableArray<UIMenuElement *> *items = [NSMutableArray arrayWithObject:automatic];
+    for (NSString *key in SGLyricsOrder()) {
+        SGLyricsResult *offer = offers[key];
+        if (!offer) continue;
+        SGLyricsProvider *provider = SGLyricsProviderFor(key);
+        UIAction *pick = [UIAction actionWithTitle:provider.name image:nil identifier:nil
+                                           handler:^(UIAction *action) { SGLyricsChooseSource(track, key); }];
+        pick.subtitle = timingText(offer.karaokeLines);
+        pick.state = [key isEqualToString:current] ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [items addObject:pick];
+    }
+    if (items.count == 1) {
+        UIAction *none = [UIAction actionWithTitle:@"No Source Has Lyrics" image:nil identifier:nil handler:^(UIAction *action) {}];
+        none.attributes = UIMenuElementAttributesDisabled;
+        [items addObject:none];
+    }
+    return items;
+}
+
+static UIMenu *lyricsSourceMenu(void) {
+    NSString *track = SGKaraokePlayingTrack();
+    if (!SGLyricsEnabled() || !track.length || [sheetKind() isEqualToString:@"episode"]) return nil;
+    UIDeferredMenuElement *sources = [UIDeferredMenuElement elementWithUncachedProvider:^(void (^completion)(NSArray<UIMenuElement *> *)) {
+        SGLyricsOffers(track, kOffersWait, ^(NSDictionary<NSString *, SGLyricsResult *> *offers) {
+            completion(sourceItems(track, offers));
+        });
+    }];
+    UIMenu *menu = [UIMenu menuWithTitle:@"Lyrics Source" image:symbol(@"quote.bubble") identifier:nil options:0 children:@[sources]];
+    menu.subtitle = SGLyricsCreditFor(track);
+    return menu;
+}
+
 static NSArray<UIMenuElement *> *playerItems(void) {
     NSMutableArray<UIMenuElement *> *items = [NSMutableArray arrayWithObject:soundMenu()];
     if (SGPlayerMenuOffersAnimatedArtwork()) {
@@ -68,6 +124,8 @@ static NSArray<UIMenuElement *> *playerItems(void) {
                                                handler:^(UIAction *action) { SGRPlayerMenuSetBackground(kind); }]];
         }
     }
+    UIMenu *lyrics = lyricsSourceMenu();
+    if (lyrics) [items addObject:lyrics];
     return items;
 }
 

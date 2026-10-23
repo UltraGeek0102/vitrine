@@ -54,21 +54,84 @@ static NSMutableArray<NSMutableDictionary *> *navbarEntries(void) {
 
 // A tab of the mod's own carries an identity of its own, so the same page can sit on the bar twice
 // and renaming one does not shuffle the order.
-static void appendTab(NSDictionary *tab) {
+static NSMutableDictionary *tabEntry(NSDictionary *tab) {
     NSMutableDictionary *entry = [@{SGRNavbarID: NSUUID.UUID.UUIDString, SGRNavbarTitle: tab[SGTabTitle],
                                     SGRNavbarURI: tab[SGTabURI], SGRNavbarIcon: tab[SGTabIcon]} mutableCopy];
     entry[SGRNavbarIconSet] = tab[SGTabIconSet];
-    SGRSetNavbarLayout([navbarEntries() arrayByAddingObject:entry]);
+    return entry;
+}
+
+static void appendTab(NSDictionary *tab) {
+    SGRSetNavbarLayout([navbarEntries() arrayByAddingObject:tabEntry(tab)]);
     SGRRefreshTabBar();
 }
 
-// Split tabs: a switch per tab of the bar, on to set it apart at the trailing end.
+// The identities of Spotify's own tabs that stand in the split list: they leave the bar's list while they do.
+static NSSet<NSString *> *splitStockIDs(void) {
+    NSMutableSet<NSString *> *idents = [NSMutableSet set];
+    for (NSDictionary *entry in SGRNavbarSplit()) if (!entry[SGRNavbarURI] && entry[SGRNavbarID]) [idents addObject:entry[SGRNavbarID]];
+    return idents;
+}
+
+// The Add a Tab sheet's tab for an entry of the mod's own, and the entry it gives back, keeping its identity and place.
+static NSDictionary *sheetTab(NSDictionary *entry) {
+    NSMutableDictionary *tab = [@{SGTabTitle: entry[SGRNavbarTitle] ?: @"", SGTabURI: entry[SGRNavbarURI], SGTabIcon: entry[SGRNavbarIcon] ?: @"star"} mutableCopy];
+    tab[SGTabIconSet] = entry[SGRNavbarIconSet];
+    return tab;
+}
+
+static NSMutableDictionary *editedEntry(NSDictionary *entry, NSDictionary *edited) {
+    NSMutableDictionary *now = [entry mutableCopy];
+    now[SGRNavbarTitle] = edited[SGTabTitle];
+    now[SGRNavbarURI] = edited[SGTabURI];
+    now[SGRNavbarIcon] = edited[SGTabIcon];
+    now[SGRNavbarIconSet] = edited[SGTabIconSet];
+    return now;
+}
+
+// Takes a tab of Spotify's off the split list.
+static void hideFromSplit(NSString *ident) {
+    if (![splitStockIDs() containsObject:ident]) return;
+    NSMutableArray<NSDictionary *> *split = [NSMutableArray array];
+    for (NSDictionary *entry in SGRNavbarSplit()) if (entry[SGRNavbarURI] || ![entry[SGRNavbarID] isEqual:ident]) [split addObject:entry];
+    SGRSetNavbarSplit(split);
+}
+
+// A tab of Spotify's moved over to the split list is shown there, so it is not left hidden on the bar's list: the
+// editor would have it both hidden and apart.
+static void showStockTab(NSString *ident) {
+    NSMutableArray<NSDictionary *> *layout = [SGRNavbarLayout() mutableCopy];
+    for (NSUInteger i = 0; i < layout.count; i++) {
+        if (![layout[i][SGRNavbarID] isEqual:ident] || ![layout[i][SGRNavbarHidden] boolValue]) continue;
+        NSMutableDictionary *shown = [layout[i] mutableCopy];
+        [shown removeObjectForKey:SGRNavbarHidden];
+        layout[i] = shown;
+        SGRSetNavbarLayout(layout);
+        return;
+    }
+}
+
+static UIImage *glyphFor(NSDictionary *entry, BOOL active);
+
+// Split tabs: the tabs set apart at the trailing end of the bar, a list of their own, in the order they stand on the
+// right, which the handles change. A tab is added the way one is added to the bar (the same Add a Tab sheet) and is
+// not on the bar's list, so removing it from either leaves the other alone; a tap on one opens it in that sheet to
+// rename it, change its icon or remove it, as on the bar's page. Spotify's own tabs can be moved over from the third
+// section; a tab of Spotify's stands in one place only, so it leaves the bar while it is here and comes back when it
+// is removed. It comes over shown: the split list shows whatever is on it.
+typedef NS_ENUM(NSInteger, SGRSplitSection) {
+    SGRSplitSectionApart,
+    SGRSplitSectionAdd,
+    SGRSplitSectionStock,
+    SGRSplitSectionCount,
+};
+
 @interface SGRSplitTabsPage : SGPage
 @end
 
 @implementation SGRSplitTabsPage {
-    NSArray<NSDictionary *> *_entries;
-    NSMutableSet<NSString *> *_split;
+    NSMutableArray<NSDictionary *> *_split;
+    NSArray<NSString *> *_stock;   // Spotify's tabs that are not in the split list
     UIView *_intro;
 }
 
@@ -80,11 +143,12 @@ static void appendTab(NSDictionary *tab) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    _intro = SGNote(@"Tabs switched on here sit apart from the others at the right end of the bar, the way the Music "
-                    "app sets Search apart. Hidden tabs stay hidden.");
+    self.tableView.editing = YES;
+    self.tableView.allowsSelectionDuringEditing = YES;
+    _intro = SGNote(@"Tabs here sit apart from the others at the right end of the bar, the way the Music "
+                    "app sets Search apart. They are not on the bar's own list.");
     self.tableView.tableHeaderView = _intro;
-    _entries = navbarEntries();
-    _split = [NSMutableSet setWithArray:SGRNavbarSplit()];
+    [self load];
 }
 
 - (void)viewWillLayoutSubviews {
@@ -97,16 +161,43 @@ static void appendTab(NSDictionary *tab) {
     SGInsetForBars(self.tableView);
 }
 
+- (void)load {
+    _split = [SGRNavbarSplit() mutableCopy];
+    NSSet<NSString *> *taken = splitStockIDs();
+    NSMutableArray<NSString *> *stock = [NSMutableArray array];
+    for (NSString *ident in SGRNavbarStock()) if (![taken containsObject:ident]) [stock addObject:ident];
+    _stock = stock;
+}
+
+- (void)save {
+    SGRSetNavbarSplit(_split);
+    SGRRefreshTabBar();
+    [self load];
+    [self.tableView reloadData];
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
+    return SGRSplitSectionCount;
+}
+
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
-    return (NSInteger)_entries.count;
+    if (section == SGRSplitSectionAdd) return 1;
+    return (NSInteger)(section == SGRSplitSectionApart ? _split.count : _stock.count);
+}
+
+- (NSString *)headerFor:(NSInteger)section {
+    if (section == SGRSplitSectionApart) return _split.count ? @"Apart, on the right" : nil;
+    if (section == SGRSplitSectionStock) return _stock.count ? @"Spotify's tabs" : nil;
+    return nil;
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
-    return SGSectionHeader(table, @"Tabs");
+    NSString *title = [self headerFor:section];
+    return title ? SGSectionHeader(table, title) : nil;
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
-    return SGSectionHeaderHeight();
+    return [self headerFor:section] ? SGSectionHeaderHeight() : SGSectionGap;
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section {
@@ -115,26 +206,106 @@ static void appendTab(NSDictionary *tab) {
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = SGDequeueCell(table, @"split");
-    NSDictionary *entry = _entries[(NSUInteger)path.row];
-    BOOL apart = [_split containsObject:entry[SGRNavbarID]];
-    NSString *where = [entry[SGRNavbarHidden] boolValue] ? @"Hidden" : apart ? @"Apart, on the right" : @"With the others";
-    SGFillCell(cell, entry[SGRNavbarTitle], where, nil, nil);
-    UISwitch *toggle = [UISwitch new];
-    toggle.onTintColor = SGGreen();
-    toggle.on = apart;
-    toggle.tag = path.row;
-    [toggle addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
-    cell.accessoryView = toggle;
+    if (path.section == SGRSplitSectionAdd) {
+        SGFillCell(cell, @"Add a tab", nil, SGRAccent(), nil);
+        cell.accessibilityTraits = UIAccessibilityTraitButton;
+    } else if (path.section == SGRSplitSectionApart) {
+        NSDictionary *entry = _split[(NSUInteger)path.row];
+        SGFillCell(cell, entry[SGRNavbarTitle], nil, nil, nil);
+        UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
+        content.image = glyphFor(entry, NO);
+        content.imageProperties.tintColor = UIColor.whiteColor;
+        content.imageProperties.maximumSize = CGSizeMake(24, 24);
+        content.imageProperties.reservedLayoutSize = CGSizeMake(28, 28);
+        cell.contentConfiguration = content;
+        cell.accessibilityHint = entry[SGRNavbarURI] ? @"Opens the tab to edit it" : nil;
+    } else {
+        SGFillCell(cell, _stock[(NSUInteger)path.row], nil, nil, nil);
+        cell.accessibilityHint = @"Moves the tab to the right end of the bar";
+    }
     return cell;
 }
 
-- (void)toggled:(UISwitch *)toggle {
-    NSString *ident = _entries[(NSUInteger)toggle.tag][SGRNavbarID];
-    if (toggle.on) [_split addObject:ident];
-    else [_split removeObject:ident];
-    SGRSetNavbarSplit(_split.allObjects);
+- (BOOL)tableView:(UITableView *)table canEditRowAtIndexPath:(NSIndexPath *)path {
+    return path.section == SGRSplitSectionApart;
+}
+
+- (BOOL)tableView:(UITableView *)table canMoveRowAtIndexPath:(NSIndexPath *)path {
+    return path.section == SGRSplitSectionApart;
+}
+
+// Dragged past either end of the list, the tab stops at that end.
+- (NSIndexPath *)tableView:(UITableView *)table targetIndexPathForMoveFromRowAtIndexPath:(NSIndexPath *)from toProposedIndexPath:(NSIndexPath *)to {
+    if (to.section == SGRSplitSectionApart) return to;
+    return [NSIndexPath indexPathForRow:to.section < SGRSplitSectionApart ? 0 : (NSInteger)_split.count - 1 inSection:SGRSplitSectionApart];
+}
+
+- (void)tableView:(UITableView *)table moveRowAtIndexPath:(NSIndexPath *)from toIndexPath:(NSIndexPath *)to {
+    NSDictionary *entry = _split[(NSUInteger)from.row];
+    [_split removeObjectAtIndex:(NSUInteger)from.row];
+    [_split insertObject:entry atIndex:(NSUInteger)to.row];
+    SGRSetNavbarSplit(_split);
     SGRRefreshTabBar();
-    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:toggle.tag inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (UITableViewCellEditingStyle)tableView:(UITableView *)table editingStyleForRowAtIndexPath:(NSIndexPath *)path {
+    return path.section == SGRSplitSectionApart ? UITableViewCellEditingStyleDelete : UITableViewCellEditingStyleNone;
+}
+
+- (BOOL)tableView:(UITableView *)table shouldIndentWhileEditingRowAtIndexPath:(NSIndexPath *)path {
+    return NO;
+}
+
+- (void)tableView:(UITableView *)table commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)path {
+    if (style != UITableViewCellEditingStyleDelete || path.section != SGRSplitSectionApart) return;
+    [_split removeObjectAtIndex:(NSUInteger)path.row];
+    [self save];
+}
+
+- (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
+    [table deselectRowAtIndexPath:path animated:YES];
+    if (path.section == SGRSplitSectionAdd) {
+        __weak typeof(self) weakSelf = self;
+        SGPresentAddTabSheet(self, tabPresets(), ^(NSDictionary *tab) {
+            typeof(self) page = weakSelf;
+            if (!page) return;
+            [page->_split addObject:tabEntry(tab)];
+            [page save];
+        });
+    } else if (path.section == SGRSplitSectionApart) {
+        if (_split[(NSUInteger)path.row][SGRNavbarURI]) [self editRow:path.row];
+    } else if (path.section == SGRSplitSectionStock) {
+        NSString *ident = _stock[(NSUInteger)path.row];
+        showStockTab(ident);
+        [_split addObject:@{SGRNavbarID: ident, SGRNavbarTitle: ident}];
+        [self save];
+    }
+}
+
+// The row of the list as it is now with this identity; the list is read again on every save.
+- (NSUInteger)rowWithID:(NSString *)ident {
+    for (NSUInteger row = 0; row < _split.count; row++) if ([_split[row][SGRNavbarID] isEqualToString:ident]) return row;
+    return NSNotFound;
+}
+
+// The Add a Tab sheet over one of the mod's own tabs, as the bar's page opens it: Save keeps its place and identity.
+- (void)editRow:(NSInteger)row {
+    NSDictionary *entry = _split[(NSUInteger)row];
+    NSString *ident = entry[SGRNavbarID];
+    __weak typeof(self) weakSelf = self;
+    SGPresentEditTabSheet(self, tabPresets(), sheetTab(entry), ^(NSDictionary *edited) {
+        typeof(self) page = weakSelf;
+        NSUInteger now = [page rowWithID:ident];
+        if (!page || now == NSNotFound) return;
+        page->_split[now] = editedEntry(page->_split[now], edited);
+        [page save];
+    }, ^{
+        typeof(self) page = weakSelf;
+        NSUInteger now = [page rowWithID:ident];
+        if (!page || now == NSNotFound) return;
+        [page->_split removeObjectAtIndex:now];
+        [page save];
+    });
 }
 
 @end
@@ -203,9 +374,10 @@ static NSArray<UITabBarItem *> *itemsFor(NSArray<NSDictionary *> *entries, BOOL 
     NSMutableArray<NSDictionary *> *shown = [NSMutableArray array];
     if (custom) for (NSDictionary *entry in entries) if (![entry[SGRNavbarHidden] boolValue]) [shown addObject:entry];
     if (!shown.count) [shown addObjectsFromArray:stockEntries()];
-    NSSet<NSString *> *split = custom ? [NSSet setWithArray:SGRNavbarSplit()] : nil;
+    NSSet<NSString *> *splitStock = custom ? splitStockIDs() : nil;
     NSMutableArray<NSDictionary *> *main = [NSMutableArray array], *apart = [NSMutableArray array];
-    for (NSDictionary *entry in shown) [([split containsObject:entry[SGRNavbarID]] ? apart : main) addObject:entry];
+    for (NSDictionary *entry in shown) if (![splitStock containsObject:entry[SGRNavbarID]]) [main addObject:entry];
+    if (custom) [apart addObjectsFromArray:SGRNavbarSplit()];
     if (!main.count) {
         main = shown;
         apart = [NSMutableArray array];
@@ -471,9 +643,6 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 
 - (void)save {
     SGRSetNavbarLayout(_entries);
-    // A split tab removed leaves the split list with it.
-    NSArray *idents = [_entries valueForKey:SGRNavbarID];
-    SGRSetNavbarSplit([SGRNavbarSplit() filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF IN %@", idents]]);
     SGRRefreshTabBar();
     [self showChoices];
 }
@@ -548,7 +717,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     SGRTabCell *cell = [table dequeueReusableCellWithIdentifier:@"tab"] ?: [[SGRTabCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"tab"];
     NSDictionary *entry = _entries[(NSUInteger)path.row];
     BOOL hidden = [entry[SGRNavbarHidden] boolValue];
-    SGFillCell(cell, entry[SGRNavbarTitle], nil, hidden ? SGGrey() : nil, nil);
+    SGFillCell(cell, entry[SGRNavbarTitle], [splitStockIDs() containsObject:entry[SGRNavbarID]] ? @"Apart, on the right" : nil, hidden ? SGGrey() : nil, nil);
     UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
     content.image = glyphFor(entry, NO);
     content.imageProperties.tintColor = hidden ? SGGrey() : UIColor.whiteColor;
@@ -639,6 +808,9 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 - (void)toggleRow:(NSInteger)row {
     NSMutableDictionary *entry = _entries[(NSUInteger)row];
     entry[SGRNavbarHidden] = [entry[SGRNavbarHidden] boolValue] ? nil : @YES;
+    // A Spotify tab hidden here while it stands apart leaves the split list too: hidden is hidden everywhere, and the
+    // editor would have it both hidden and apart while the bar still showed it on the right.
+    if (entry[SGRNavbarHidden]) hideFromSplit(entry[SGRNavbarID]);
     [self save];
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:row inSection:SGRNavbarSectionTabs]] withRowAnimation:UITableViewRowAnimationNone];
 }
@@ -685,16 +857,11 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 - (void)editRow:(NSInteger)row {
     NSDictionary *entry = _entries[(NSUInteger)row];
     NSString *ident = entry[SGRNavbarID];
-    NSMutableDictionary *tab = [@{SGTabTitle: entry[SGRNavbarTitle] ?: @"", SGTabURI: entry[SGRNavbarURI], SGTabIcon: entry[SGRNavbarIcon] ?: @"star"} mutableCopy];
-    tab[SGTabIconSet] = entry[SGRNavbarIconSet];
     __weak typeof(self) weakSelf = self;
-    SGPresentEditTabSheet(self, tabPresets(), tab, ^(NSDictionary *edited) {
+    SGPresentEditTabSheet(self, tabPresets(), sheetTab(entry), ^(NSDictionary *edited) {
         NSMutableDictionary *now = [weakSelf entryWithID:ident];
         if (!now) return;
-        now[SGRNavbarTitle] = edited[SGTabTitle];
-        now[SGRNavbarURI] = edited[SGTabURI];
-        now[SGRNavbarIcon] = edited[SGTabIcon];
-        now[SGRNavbarIconSet] = edited[SGTabIconSet];
+        [now setDictionary:editedEntry(now, edited)];
         [weakSelf save];
         [weakSelf.tableView reloadData];
     }, ^{

@@ -41,8 +41,8 @@ static const CGFloat kDissolve = 0.46, kTopScrim = 140, kTopScrimAlpha = 0.28;
 static const CGFloat kMinHero = 120, kMinCover = 80;
 
 static char kCoverKey, kMetaKey, kPlayKey, kLayoutKey, kToolbarKey, kScrimKey, kBarScrimKey;
-static char kShuffleKey, kAddKey, kDownloadKey, kInfoKey, kBlockHeightKey, kBlockWatchedKey;
-static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kMoreKey, kCreatorKey, kPinnedMoreKey, kSortKey;
+static char kShuffleKey, kAddKey, kDownloadKey, kPlainDownloadKey, kInfoKey, kBlockHeightKey, kBlockWatchedKey;
+static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kMoreKey, kCreatorKey, kPinnedMoreKey, kSortKey, kTitleKey;
 
 #pragma mark - finding things
 
@@ -52,13 +52,16 @@ static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kM
 @implementation SGRWeakView
 @end
 
-// The page the header is on: FTPViewController's own view, which holds the field, the list and the header
-// and does not scroll. Walked from the header rather than taken off sgr_playlistRoot, so a playlist under
+// The page the header is on: FTPViewController's own view -- or, for the songs the user liked by one artist,
+// CollectionArtistViewController's, the same header kit with no cover -- which holds the field, the list and the
+// header and does not scroll. Walked from the header rather than taken off sgr_playlistRoot, so a playlist under
 // another one on the stack pins its own ⋯ and not the one on top.
 UIView *SGRPlaylistPageOf(UIView *view) {
     for (UIResponder *r = view; r; r = r.nextResponder) {
         if (![r isKindOfClass:UIViewController.class]) continue;
-        if ([NSStringFromClass(r.class) containsString:@"FTPViewController"]) return ((UIViewController *)r).viewIfLoaded;
+        NSString *name = NSStringFromClass(r.class);
+        // The page of the songs liked by one artist is the cover-less case of the same header kit.
+        if ([name containsString:@"FTPViewController"] || [name hasSuffix:@"CollectionArtistViewController"]) return ((UIViewController *)r).viewIfLoaded;
     }
     return nil;
 }
@@ -66,7 +69,8 @@ UIView *SGRPlaylistPageOf(UIView *view) {
 UIViewController *SGRPlaylistHeaderOf(UIView *view) {
     for (UIResponder *r = view; r; r = r.nextResponder) {
         if (![r isKindOfClass:UIViewController.class]) continue;
-        return [NSStringFromClass(r.class) containsString:@"FreeTierPlaylist"] ? (UIViewController *)r : nil;
+        NSString *name = NSStringFromClass(r.class);
+        return [name containsString:@"FreeTierPlaylist"] || [name hasSuffix:@"CollectionArtistHeaderViewController"] ? (UIViewController *)r : nil;
     }
     return nil;
 }
@@ -323,12 +327,27 @@ static BOOL showsDownload(UIView *save, UIView *download) {
     return (SGRReadAddTo(save, &added) && added) || (SGRReadDownload(download, &state, NULL) && state != SGRDownloadNone);
 }
 
+// The header of the songs the user liked by one artist: the playlist page's kit with no playlist behind it.
+static BOOL isCollectionArtist(UIView *root) {
+    return [NSStringFromClass(SGRPlaylistHeaderOf(root).class) hasSuffix:@"CollectionArtistHeaderViewController"];
+}
+
+// The name on the songs liked by one artist: the page's big label. Not the first text of the block, which is the
+// word on Spotify's Follow button for as long as the name has not been filled in.
+static NSString *artistTitle(UIView *block) {
+    UIView *label = SGRFindByIdentifier(block, @"Encore.Label-internal", &kTitleKey);
+    NSString *text = [label isKindOfClass:UILabel.class] ? ((UILabel *)label).text : nil;
+    text = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    return text.length ? text : nil;
+}
+
 // What the playlist's header shows: the name and the description from the page's model, the creator and the
 // length from Spotify's concealed labels, and on Play's right save for someone else's playlist (download once
 // it is saved, showsDownload), download for one's own and for Liked Songs, which Spotify reports as neither
 // owned nor unsaved (isOwnedBySelf NO, formatListType liked-songs).
 static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id model) {
-    NSString *title = modelString(model, @"playlistName") ?: firstText(block, nil);
+    BOOL artistPage = isCollectionArtist(root);
+    NSString *title = modelString(model, @"playlistName") ?: (artistPage ? artistTitle(block) : firstText(block, nil));
     [info showTitle:title creator:creatorIn(block) length:lengthIn(block)
               about:plainText(modelString(model, @"playlistDescription"))];
 
@@ -337,7 +356,9 @@ static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id mo
     UIView *shuffle = SGRFindByIdentifier(block, @"Components.UI.ShuffleButton", &kShuffleKey);
     UIView *play = SGRFindByIdentifier(root, @"header-play-button", &kPlayKey);
     UIView *save = own ? nil : SGRFindByIdentifier(block, @"Components.UI.AddToButton", &kAddKey);
-    UIView *download = SGRFindByIdentifier(block, @"DownloadButton.Granular*", &kDownloadKey);
+    // The Granular button of the playlist pages, or the plain one the songs liked by one artist have.
+    UIView *download = SGRFindByIdentifier(block, @"DownloadButton.Granular*", &kDownloadKey)
+        ?: SGRFindByIdentifier(block, @"Components.UI.DownloadButton", &kPlainDownloadKey);
     if (save && showsDownload(save, download)) save = nil;
     if (save) download = nil;
     [info showShuffle:shuffle play:play trailing:save ?: download

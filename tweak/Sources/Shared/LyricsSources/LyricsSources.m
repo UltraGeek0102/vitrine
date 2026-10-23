@@ -169,6 +169,7 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             // A source that matches by Spotify's own track id has everything it needs from the
             // start; the rest wait for the player to name the track before they can search.
             provider.needsName = ![key isEqualToString:@"musixmatch"] && ![key isEqualToString:SGSpicyLyricsKey];
+            provider.untimed = [key isEqualToString:@"genius"];
             provider.ask = ask;
             return provider;
         };
@@ -182,6 +183,7 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             make(@"qqmusic", @"QQ Music", @"Line timing, Chinese catalog", SGQQMusicAsk),
             make(@"kugou", @"KuGou", @"Word timing, Chinese catalog", SGKuGouAsk),
             make(SGImportedLRCKey, @"Imported LRC", @"Your own .lrc files", SGImportedLRCAsk),
+            make(@"genius", @"Genius", @"Untimed, when no other has lyrics", SGGeniusAsk),
         ];
     });
     return all;
@@ -204,10 +206,11 @@ static NSArray<NSString *> *fromLegacyKeys(void) {
 }
 
 // With nothing stored and nothing to carry over, every source is on: the user's own files first, word
-// timing ahead of line timing, and the two Chinese catalogs last, asked only once the rest have missed.
+// timing ahead of line timing, the two Chinese catalogs once the rest have missed, and Genius's untimed
+// words under everything.
 // Spicy Lyrics passes straight on without its key.
 static NSArray<NSString *> *defaultOrder(void) {
-    return @[SGImportedLRCKey, SGSpicyLyricsKey, @"binilyrics", @"musixmatch", @"unison", @"netease", @"lrclib", @"qqmusic", @"kugou"];
+    return @[SGImportedLRCKey, SGSpicyLyricsKey, @"binilyrics", @"musixmatch", @"unison", @"netease", @"lrclib", @"qqmusic", @"kugou", @"genius"];
 }
 
 NSArray<NSString *> *SGLyricsOrder(void) {
@@ -238,7 +241,7 @@ BOOL SGLyricsEnabled(void) {
 // request often lands a beat before the player moves on to its track, and comparing then left the
 // query nameless. A track the player has not reported starts with nothing, and the first source
 // that matches by id fills the rest in.
-static SGLyricsQuery *queryFor(NSString *trackID) {
+SGLyricsQuery *SGLyricsQueryFor(NSString *trackID) {
     SGLyricsQuery *query = [SGLyricsQuery new];
     query.trackID = trackID;
     // A local file is named by its own key: its tags, and the names the user gave it over them.
@@ -255,6 +258,10 @@ static SGLyricsQuery *queryFor(NSString *trackID) {
     query.title = track.trackTitle;
     query.artist = track.artistName;
     NSDictionary<NSString *, NSString *> *metadata = track.metadata;
+    // With "every track" on, the metadata hook has just noted Spotify's own verdict and forced has_lyrics on;
+    // off, nothing notes it and has_lyrics is Spotify's own.
+    id has = metadata[@"has_lyrics"];
+    if (has && SGLyricsSpotifyHas(trackID) < 0) SGLyricsNoteSpotifyHas(trackID, [@"true" isEqual:has]);
     id album = metadata[@"album_title"];
     id length = metadata[@"duration"];
     if ([album isKindOfClass:NSString.class]) query.album = album;
@@ -379,6 +386,10 @@ void SGLyricsOpenCreditLinks(NSArray<SGLyricsLink *> *links, UIView *from) {
 @property (nonatomic, strong) NSMutableArray<NSString *> *passedOver;
 // sg_failures when the walk started. Another walk's failure counts too, which at worst asks again.
 @property (nonatomic) NSUInteger failuresAtStart;
+// The source picked for the track when the walk started, asked first.
+@property (nonatomic, copy) NSString *picked;
+// The picked source answered with lines, which are the walk's answer however they are timed.
+@property (nonatomic) BOOL pickedAnswered;
 @end
 
 @implementation SGLyricsWalk
@@ -398,7 +409,18 @@ static void finish(SGLyricsWalk *walk) {
     // server's 503 read as "no lyrics" hid a track's lyrics until Spotify was restarted.
     BOOL everyoneAsked = !walk.passedOver.count;
     BOOL failed = atomic_load(&sg_failures) != walk.failuresAtStart;
-    if (lyrics || (everyoneAsked && !failed) || merged.instrumental) {
+    id picked = SGLyricsChosenSource(trackID) ? sg_kept[trackID] : nil;
+    if (walk.pickedAnswered) {
+        SGLyricsKeepChosen(trackID, lyrics);
+    } else if ([picked isKindOfClass:SGLyricsResult.class]) {
+        // A source was picked from the player's ⋯ while the walk ran: the pick stands, and the walk's answer
+        // is what Automatic puts back. Not when the walk began with a pick of its own: that one was asked
+        // first and may have answered, so the walk never learned what the order would choose.
+        if (!walk.picked) SGLyricsNoteOrderChoice(trackID, lyrics);
+        lyrics = picked;
+    } else if (lyrics || (everyoneAsked && !failed) || merged.instrumental) {
+        // With a pick whose request failed, the walk's answer is kept, but not as the pick's: it weighs
+        // against Spotify's own lines as any walk's does, and the next walk asks the pick first again.
         if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
         sg_kept[trackID] = lyrics ?: NSNull.null;
         if (!lyrics) {
@@ -418,11 +440,21 @@ static void finish(SGLyricsWalk *walk) {
     for (void (^done)(SGLyricsResult *) in waiting) done(lyrics);
 }
 
+// Whether the walk has its answer. walk.merged is the best seen so far: betterLines keeps the finest timed
+// lines, the first in the order among equals, so a walk run to the end takes words over a line's start over
+// plain text. It stops at the first timed answer, or with Prefer word-by-word timing at the first with words
+// timed. A source picked for the track is asked first, and its answer ends the walk in step.
+static BOOL settled(SGLyricsWalk *walk) {
+    SGLyricsResult *merged = walk.merged;
+    if (!(merged.synced && merged.texts.count && merged.karaokeLines.count)) return NO;
+    if (!SGFlag(SGKeyLyricsPreferWordTiming, NO)) return YES;
+    return SGKaraokeLinesTiming(merged.karaokeLines) == SGKaraokeTimingWords;
+}
+
 static void step(SGLyricsWalk *walk) {
     SGLyricsQuery *query = walk.query;
     SGLyricsResult *merged = walk.merged;
-    // A source higher in the order has answered with timed lyrics: that is the answer.
-    if (merged.synced && merged.texts.count && merged.karaokeLines.count) {
+    if (settled(walk)) {
         finish(walk);
         return;
     }
@@ -442,17 +474,39 @@ static void step(SGLyricsWalk *walk) {
         return;
     }
     SGLyricsProvider *provider = SGLyricsProviderFor(walk.order[walk.index++]);
+    // Not yet known asks: wrongly passing Genius over would keep "no lyrics" for a track Spotify has none for.
+    // The source picked for the track is asked whatever Spotify has: the pick stands timed or not.
+    if (provider.untimed && ![provider.key isEqualToString:walk.picked]
+        && (merged.karaokeLines.count || merged.texts.count || SGLyricsSpotifyHas(query.trackID) == 1)) {
+        step(walk);
+        return;
+    }
     if (provider.needsName && !named(query)) {
         [walk.passedOver addObject:provider.key];
         step(walk);
         return;
     }
+    NSUInteger failures = atomic_load(&sg_failures);
     provider.ask(query, ^(SGLyricsResult *fresh) {
         learnFrom(query, fresh);
         noteCredit(fresh);
+        // Instrumental counts as no lines here; a failed request does not, as the server may only be busy.
+        if ([provider.key isEqualToString:walk.picked] && !fresh.karaokeLines.count && atomic_load(&sg_failures) == failures) {
+            SGLyricsDropChoice(query.trackID, walk.picked);
+        }
         if (fresh.instrumental) {
             SGLog(@"lyrics: %@ is instrumental, by %@", query.trackID, provider.key);
             merged.instrumental = YES;
+            finish(walk);
+            return;
+        }
+        // The pick stands timed or not, so a timed source lower in the order cannot replace it. A pick made while
+        // the walk runs is left to finish, which keeps the order's answer for Automatic.
+        if (fresh.karaokeLines.count && [provider.key isEqualToString:walk.picked]
+            && [walk.picked isEqualToString:SGLyricsChosenSource(query.trackID)]) {
+            if (!fresh.provider) fresh.provider = provider.name;
+            walk.merged = fresh;
+            walk.pickedAnswered = YES;
             finish(walk);
             return;
         }
@@ -460,6 +514,9 @@ static void step(SGLyricsWalk *walk) {
             merged.karaokeLines = fresh.karaokeLines;
             merged.wordTimed = fresh.wordTimed;
             merged.provider = fresh.provider ?: provider.name;
+            if (SGFlag(SGKeyLyricsPreferWordTiming, NO) && SGKaraokeLinesTiming(fresh.karaokeLines) == SGKaraokeTimingLine && walk.index < walk.order.count) {
+                SGLog(@"lyrics: %@ line timed by %@, asking on for words timed", query.trackID, merged.provider);
+            }
         }
         if (betterTexts(merged, fresh)) {
             merged.starts = fresh.starts;
@@ -474,10 +531,20 @@ static void step(SGLyricsWalk *walk) {
 }
 
 static void startWalk(NSString *trackID, SGLyricsQuery *query) {
+    NSMutableArray<NSString *> *order = [SGLyricsOrder() mutableCopy];
+    NSString *chosen = SGLyricsChosenSource(trackID);
+    if (chosen && [order containsObject:chosen]) {
+        [order removeObject:chosen];
+        [order insertObject:chosen atIndex:0];
+    } else if (chosen) {
+        SGLyricsDropChoice(trackID, chosen);
+        chosen = nil;
+    }
     SGLog(@"lyrics: asking %@ for %@ as \"%@\" by \"%@\", album \"%@\", %lds",
-          [SGLyricsOrder() componentsJoinedByString:@", "], trackID, query.title, query.artist, query.album, (long)query.seconds);
+          [order componentsJoinedByString:@", "], trackID, query.title, query.artist, query.album, (long)query.seconds);
     SGLyricsWalk *walk = [SGLyricsWalk new];
-    walk.order = SGLyricsOrder();
+    walk.order = order;
+    walk.picked = chosen;
     walk.query = query;
     walk.merged = [SGLyricsResult new];
     walk.passedOver = [NSMutableArray array];
@@ -488,7 +555,7 @@ static void startWalk(NSString *trackID, SGLyricsQuery *query) {
 // Starts the walk as soon as the player has named the track, or once it has waited long enough
 // that it is not going to: a track opened for something other than what is playing is never named.
 static void whenNamed(NSString *trackID, NSTimeInterval waited) {
-    SGLyricsQuery *query = queryFor(trackID);
+    SGLyricsQuery *query = SGLyricsQueryFor(trackID);
     if (named(query) || waited >= kNameWait) {
         if (!named(query)) SGLog(@"lyrics: the player never named %@ in %.1fs", trackID, waited);
         startWalk(trackID, query);
@@ -628,6 +695,49 @@ UIViewController *SGLyricsSourcesPage(void) {
         NSString *detail = [provider.key isEqualToString:SGSpicyLyricsKey] ? SGSpicyLyricsStatus() ?: provider.detail : provider.detail;
         [all addObject:[SGSource sourceWithKey:provider.key name:provider.name detail:detail]];
     }
-    return SGSourcesPageMake(@"Lyrics sources", @"Asked top to bottom until one has word timing. Sources get only the track, never your account.",
+    NSString *note = SGFlag(SGKeyLyricsPreferWordTiming, NO)
+        ? @"Asked top to bottom until one has word timing. Sources get only the track, never your account."
+        : @"Asked top to bottom until one has timed lyrics. Sources get only the track, never your account.";
+    return SGSourcesPageMake(@"Lyrics sources", note,
                              all, ^NSArray<NSString *> * { return SGLyricsOrder(); }, ^(NSArray<NSString *> *keys) { SGLyricsSetOrder(keys); });
+}
+
+#pragma mark - a source picked for a track (LyricsPick.m)
+
+NSUInteger SGLyricsFailures(void) {
+    return atomic_load(&sg_failures);
+}
+
+// The picked answer stands in for the walk's, so a later request for the track, Spotify's own page's included,
+// gets the same lines. A source that times words but has no page text gets the page lines made from its own.
+void SGLyricsKeepChosen(NSString *trackID, SGLyricsResult *result) {
+    setUp();
+    if (!result.texts.count && result.karaokeLines.count) {
+        NSArray<NSNumber *> *starts;
+        NSArray<NSString *> *texts;
+        SGLyricsPageLines(result.karaokeLines, &starts, &texts);
+        result.starts = starts;
+        result.texts = texts;
+        result.synced = SGKaraokeLinesTiming(result.karaokeLines) != SGKaraokeTimingNone;
+    }
+    noteCredit(result);
+    result.picked = YES;
+    if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
+    sg_kept[trackID] = result;
+    @synchronized (sg_missing) { [sg_missing removeObject:trackID]; }
+}
+
+id SGLyricsKeptAnswer(NSString *trackID) {
+    setUp();
+    return sg_kept[trackID];
+}
+
+void SGLyricsRestoreKept(NSString *trackID, id kept) {
+    setUp();
+    if (kept) sg_kept[trackID] = kept;
+    else [sg_kept removeObjectForKey:trackID];
+    @synchronized (sg_missing) {
+        if (kept == NSNull.null) [sg_missing addObject:trackID];
+        else [sg_missing removeObject:trackID];
+    }
 }

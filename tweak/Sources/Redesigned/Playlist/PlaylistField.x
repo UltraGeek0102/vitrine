@@ -60,22 +60,45 @@ static SGRArtworkField *fieldIn(UIView *page) {
     return field;
 }
 
-%hook _TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController
-- (void)viewDidLayoutSubviews {
-    %orig;
-    UIView *page = ((UIViewController *)self).viewIfLoaded;
-    if (!page || page.bounds.size.height < 200) return;
+// The field goes under the page as its bottom-most view and the repaint hook keeps what Spotify paints over it
+// clear. The same for the playlist page and for the page of the songs the user liked by one artist, which is
+// Liked Songs' header kit with no cover: its field stays the neutral one.
+static SGRArtworkField *putFieldUnder(UIView *page) {
     sgr_playlistRoot = page;
     SGRArtworkField *field = fieldIn(page);
     if (field.superview != page) [page insertSubview:field atIndex:0];
     else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];
     if (!CGRectEqualToRect(field.frame, page.bounds)) field.frame = page.bounds;
+    return field;
+}
+
+%hook _TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    UIView *page = ((UIViewController *)self).viewIfLoaded;
+    if (!page || page.bounds.size.height < 200) return;
     // The page comes in whole once its cover has been read (Kit/SGRField.h).
-    [field holdPage:page];
+    [putFieldUnder(page) holdPage:page];
 }
 
 // The page the repaint hook keeps clear is the one on screen; another playlist pushed over this one sets
 // itself from its own pass, and this one sets itself again when it comes back.
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    UIView *page = ((UIViewController *)self).viewIfLoaded;
+    if (page) sgr_playlistRoot = page;
+}
+%end
+
+// The songs liked by one artist (CollectionArtistView: the list, then the 207pt header over it, as here).
+// No cover to wait for, so the page is not held.
+%hook _TtC27CollectionArtist_ArtistImpl30CollectionArtistViewController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    UIView *page = ((UIViewController *)self).viewIfLoaded;
+    if (page && page.bounds.size.height >= 200) putFieldUnder(page);
+}
+
 - (void)viewWillAppear:(BOOL)animated {
     %orig;
     UIView *page = ((UIViewController *)self).viewIfLoaded;
@@ -96,6 +119,17 @@ static SGRArtworkField *fieldIn(UIView *page) {
     for (UIView *sub in list.subviews) {
         if ([sub isMemberOfClass:UICollectionViewCell.class]) SGRClearCellPaint(sub);
     }
+}
+%end
+
+// That page's list is an SPTTableView painted the base surface from its own pass, like the one above. Every
+// list of the app is one, so it is told by its identifier first.
+%hook SPTTableView
+- (void)layoutSubviews {
+    %orig;
+    UIView *list = (UIView *)self;
+    if (![list.accessibilityIdentifier isEqualToString:@"CollectionArtistView.tableView"]) return;
+    if (list.backgroundColor && SGIsBaseSurface(list.backgroundColor.CGColor)) list.backgroundColor = UIColor.clearColor;
 }
 %end
 
@@ -121,5 +155,7 @@ static SGRArtworkField *fieldIn(UIView *page) {
     SGRequireClasses(@[
         @"_TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController",
         @"_TtC35ListUXPlatform_FreeTierPlaylistImpl32FTPTouchCancellingCollectionView",
+        @"_TtC27CollectionArtist_ArtistImpl30CollectionArtistViewController",
+        @"SPTTableView",
     ]);
 }

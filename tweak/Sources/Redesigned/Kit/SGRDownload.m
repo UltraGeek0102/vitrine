@@ -7,6 +7,8 @@
 #pragma mark - reading Spotify's button
 
 static NSString *const kIdentifierPrefix = @"DownloadButton.Granular.";
+// The plain button the songs liked by one artist have, whose identifier says nothing of the state.
+static NSString *const kPlainIdentifier = @"Components.UI.DownloadButton";
 
 static UIView *identifiedIn(UIView *source, NSString *prefix) {
     __block UIView *found = nil;
@@ -49,23 +51,40 @@ static BOOL stateFromIdentifier(NSString *identifier, SGRDownloadState *state) {
 }
 
 BOOL SGRReadDownload(UIView *source, SGRDownloadState *state, CGFloat *progress) {
-    UIView *button = source ? identifiedIn(source, kIdentifierPrefix) : nil;
+    // Either button in one walk, since every mirror button of a row asks (shuffle, Play, Add, ⋯). The plain one's
+    // owner keeps its state in `currentStatus`, with cases of its own (none, waiting, downloading, downloaded;
+    // device log on a Premium account, 2026-10-15). It keeps no progress while it downloads, so the ring turns, as
+    // it does while waiting. A value outside the cases leaves the arrow.
+    __block UIView *button = nil;
+    __block BOOL plain = NO;
+    if (source) SGForEachView(source, ^(UIView *v) {
+        if (button) return;
+        NSString *identifier = v.accessibilityIdentifier;
+        if ([identifier hasPrefix:kIdentifierPrefix]) button = v;
+        else if ([identifier hasPrefix:kPlainIdentifier]) {
+            button = v;
+            plain = YES;
+        }
+    });
     if (!button) return NO;
     SGRDownloadState said = SGRDownloadNone;
-    BOOL named = stateFromIdentifier(button.accessibilityIdentifier, &said);
+    BOOL named = !plain && stateFromIdentifier(button.accessibilityIdentifier, &said);
 
     // What the button draws from. Its state is a Swift enum without payloads, one byte, its cases numbered
     // in the order they are declared; its progress an optional 8 byte number, the value then a byte that is
     // 1 when there is none. The identifier says the same state in words, and is what counts when the model
     // cannot be read.
-    id owner = ownerOf(button, @"GranularDownloadButton");
-    const uint8_t *current = propertyBytes(owner, "currentState", 1);
-    const uint8_t *stored = propertyBytes(owner, "progress", 9);
-    BOOL modelled = current && *current <= 5;
+    id owner = ownerOf(button, plain ? @"DownloadButton" : @"GranularDownloadButton");
+    const uint8_t *current = propertyBytes(owner, plain ? "currentStatus" : "currentState", 1);
+    const uint8_t *stored = plain ? NULL : propertyBytes(owner, "progress", 9);
+    BOOL modelled = current && *current <= (plain ? 3 : 5);
     static const SGRDownloadState fromModel[] = {
         SGRDownloadNone, SGRDownloadWaiting, SGRDownloadDownloading, SGRDownloadWaiting, SGRDownloadDownloaded, SGRDownloadError,
     };
-    SGRDownloadState modelState = modelled ? fromModel[*current] : SGRDownloadNone;
+    static const SGRDownloadState fromPlainModel[] = {
+        SGRDownloadNone, SGRDownloadWaiting, SGRDownloadDownloading, SGRDownloadDownloaded,
+    };
+    SGRDownloadState modelState = modelled ? (plain ? fromPlainModel : fromModel)[*current] : SGRDownloadNone;
     SGRDownloadState result = modelled ? modelState : said;
     if (!modelled && !named) return NO;
 
