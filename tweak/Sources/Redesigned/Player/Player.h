@@ -136,6 +136,15 @@ void SGRPlayerPaintCover(UIView *stack);
 #define SGRKeyPlayerHideShuffle @"spotifyglass.redesign.player.hideShuffle"
 #define SGRKeyPlayerHideRepeat @"spotifyglass.redesign.player.hideRepeat"
 
+// Spotify's icons in the footer row (PlayerFooter.x, DJPlayer.x): Connect and the queue keep Spotify's own glyphs
+// instead of the Music app's, Lyrics and the AI DJ's Queue draw Spotify's Encore glyphs, and the AI DJ's button keeps
+// its blue disc instead of the waveform. Off until switched on, read at launch.
+#define SGRKeyPlayerSpotifyIcons @"spotifyglass.redesign.player.spotifyIcons"
+BOOL SGRPlayerSpotifyIcons(void);
+// Spotify's Encore glyph `name` (an SPTEncoreIcon class method: "lyrics", "queue") centered in `button` in place of its
+// symbol, which is hidden; kept on the button, so a second call hands back the same view. Nil if Spotify has none.
+UIView *SGRPlayerEncoreGlyphIn(SGRGlyphButton *button, NSString *name);
+
 // The lyrics turn sideways with the phone onto a landscape screen of their own (PlayerLandscape.x). On
 // until switched off. Shown or put away by hand for the harness.
 #define SGRKeyLyricsLandscape @"spotifyglass.redesign.lyrics.landscape"

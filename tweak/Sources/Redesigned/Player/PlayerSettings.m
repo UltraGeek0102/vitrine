@@ -361,15 +361,17 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
         SGNotedSection(nil, fluid, @"Brightness above 100% can make white text harder to read. A paused song holds the "
                                    @"background still. Animated and Visualizer use these where they show Fluid."),
         SGNotedSection(@"Controls", @[SGSwitchRow(@"Volume", nil, SGRKeyPlayerVolume),
-                                      SGOptionRow(@"Follow the cover", nil, SGRKeyPlayerFollowsCover)],
+                                      SGOptionRow(@"Follow the cover", nil, SGRKeyPlayerFollowsCover),
+                                      SGOptionRow(@"Spotify's icons", @"Lyrics, device, queue and the AI DJ's button", SGRKeyPlayerSpotifyIcons)],
                        @"Volume puts a slider under the controls for this iPhone, or the speaker's while Spotify plays on another device. "
-                       @"Follow the cover paints the like, shuffle, repeat, device and queue buttons, and the mini player's device and like, in the color of the song playing."),
+                       @"Follow the cover paints the like, shuffle, repeat, device and queue buttons, and the mini player's device and like, in the color of the song playing. "
+                       @"Spotify's icons keeps Spotify's own glyphs in the row under the controls instead of the Music app's."),
         SGNotedSection(@"Mini player", SGRNowPlayingBarRows(),
                        @"Apple Music style moves the now playing bar in between two tabs as you scroll down."), nil];
     [sections addObjectsFromArray:more];
     // Fluid, Animated and Visualizer share the field (PlayerMotion.x reads the choice on every track, PlayerVisualiser.m
     // on the field's layout); Still and Colors are a field of another kind, made once a launch (PlayerField.x).
-    NSString *footer = @"Fluid, Animated and Visualizer change with the next song. Still, Colors and Hide on the player apply after you restart Spotify.";
+    NSString *footer = @"Fluid, Animated and Visualizer change with the next song. Still, Colors, Hide on the player and Spotify's icons apply after you restart Spotify.";
     SGRPlayerPage *page = [[SGRPlayerPage alloc] initWithTitle:@"Player" intro:nil sections:sections footer:footer];
     weakPage = page;
     page.showcase = showcase;

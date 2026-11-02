@@ -16,6 +16,8 @@
 // Spotify has no lyrics control down here, so that one is the Kit's glyph button, and it turns the
 // lyrics in the player on and off (PlayerLyrics.x): filled while they are up, dimmed and dead for a
 // track that has none.
+// Spotify's icons (SGRKeyPlayerSpotifyIcons) leaves Connect's and the queue's glyphs Spotify's, and draws the Lyrics
+// glyph as Spotify's Encore "lyrics", lit in the primary color while the lyrics are up.
 //
 // The row sits lower than Spotify puts it, just over the home indicator the way the Music app's does
 // (issue #54): the footer unit's view is translated down, the controls follow it part of the way, and a
@@ -31,6 +33,7 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Headers/SPTEncoreIconView.h"
 #import "Player.h"
+#import <objc/message.h>
 
 static const CGFloat kLyricsGlyphSize = 20;
 // Filled and at full strength while the lyrics are up, the way the Music app marks the control that is on.
@@ -55,6 +58,7 @@ static const CGFloat kVolumeLift = 10;
 // "airplayaudio" is the name iOS 16 knows; iOS 18 calls it airplay.audio and keeps this one as its alias.
 static NSString *const kConnectSymbol = @"airplayaudio", *const kQueueSymbol = @"list.bullet";
 
+static char kEncoreKey;
 static char kConnectKey, kShareKey, kTrimmerKey, kSharedByKey, kQueueKey, kQueueIconKey, kLyricsGlyphKey, kReachKey, kRowKey;
 static __weak SGRGlyphButton *sg_lyricsGlyph;
 
@@ -81,6 +85,44 @@ static CGFloat moveTo(UIView *arranged, UIView *view, CGPoint point, UIView *hos
     return from;
 }
 
+#pragma mark - Spotify's icons
+
+BOOL SGRPlayerSpotifyIcons(void) {
+    static BOOL on;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ on = SGHidden(SGRKeyPlayerSpotifyIcons); });
+    return on;
+}
+
+UIView *SGRPlayerEncoreGlyphIn(SGRGlyphButton *button, NSString *name) {
+    if (!button) return nil;
+    SPTEncoreIconView *encore = objc_getAssociatedObject(button, &kEncoreKey);
+    if (!encore) {
+        Class icons = NSClassFromString(@"SPTEncoreIcon"), view = NSClassFromString(@"SPTEncoreIconView");
+        SEL glyphSel = NSSelectorFromString(name);
+        if (!icons || !view || ![icons respondsToSelector:glyphSel]) {
+            SGLog(@"redesign player: no Encore glyph %@, the Music app's stays", name);
+            return nil;
+        }
+        id glyph = ((id (*)(id, SEL))objc_msgSend)(icons, glyphSel);
+        encore = glyph ? [[view alloc] initWithIcon:glyph] : nil;
+        if (!encore) return nil;
+        encore.userInteractionEnabled = NO;
+        encore.isAccessibilityElement = NO;
+        CGSize size = encore.intrinsicContentSize;
+        encore.bounds = CGRectMake(0, 0, size.width > 0 ? size.width : 24, size.height > 0 ? size.height : 24);
+        encore.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin
+                                | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+        encore.foregroundColor = button.glyph.tintColor ?: SGRPrimary();
+        objc_setAssociatedObject(button, &kEncoreKey, encore, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    // Hidden rather than clear: the button puts its glyph's alpha back as it is pressed.
+    button.glyph.hidden = YES;
+    if (encore.superview != button) [button addSubview:encore];
+    encore.center = CGPointMake(CGRectGetMidX(button.bounds), CGRectGetMidY(button.bounds));
+    return encore;
+}
+
 #pragma mark - lyrics
 
 void SGRPlayerLyricsChanged(void) {
@@ -98,6 +140,7 @@ void SGRPlayerLyricsChanged(void) {
     void (^mark)(void) = ^{
         glyph.enabled = enabled;
         glyph.glyph.tintColor = open ? SGRPrimary() : SGRSecondary();
+        ((SPTEncoreIconView *)objc_getAssociatedObject(glyph, &kEncoreKey)).foregroundColor = glyph.glyph.tintColor;
     };
     if (animated) SGRAnimate(SGRMotionFade, mark, nil);
     else mark();
@@ -112,6 +155,7 @@ SGRGlyphButton *SGRPlayerLyricsGlyphIn(UIView *host) {
         objc_setAssociatedObject(host, &kLyricsGlyphKey, glyph, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     if (glyph.superview != host) [host addSubview:glyph];
+    if (SGRPlayerSpotifyIcons()) SGRPlayerEncoreGlyphIn(glyph, @"lyrics");
     sg_lyricsGlyph = glyph;
     return glyph;
 }
@@ -189,6 +233,7 @@ static void takeConnectImage(UIImageView *drawn) {
 // tells the stand-in; the clear image set back in reports too, and stops there. Each pass looks too, at the cost of a
 // compare, for a view the image cannot be watched on.
 static void standInForConnect(UIImageView *drawn) {
+    if (SGRPlayerSpotifyIcons()) return;
     BOOL made = objc_getAssociatedObject(drawn, &kStandInKey) != nil;
     if (!standIn(drawn, kConnectSymbol)) return;
     takeConnectImage(drawn);
@@ -208,6 +253,7 @@ static void tintQueueStandIn(SPTEncoreIconView *icon) {
 }
 
 static void standInForQueue(SPTEncoreIconView *icon) {
+    if (SGRPlayerSpotifyIcons()) return;
     if (![icon isKindOfClass:%c(SPTEncoreIconView)]) return;
     BOOL made = objc_getAssociatedObject(icon, &kStandInKey) != nil;
     if (!standIn(icon, kQueueSymbol) || made) return;

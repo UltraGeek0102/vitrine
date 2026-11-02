@@ -12,18 +12,23 @@
 // Footer: DJMFooterUnitView holds the share button, the DJ button, Connect and an empty view, not in a stack.
 // Connect and the DJ button stay Spotify's and are only moved, by a transform that survives relayout. Lyrics
 // and Queue are the Kit's glyph buttons; Queue, the Music app's list.bullet (issue #109), opens spotify:now-playing:queue.
+// The DJ button's blue disc is masked away and the Music app's waveform drawn over it: the mask hides what the button
+// draws but not its touches or its accessibility, which stay Spotify's. With Spotify's icons (SGRKeyPlayerSpotifyIcons)
+// the disc stays, and Lyrics and Queue draw Spotify's Encore glyphs.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/Navigation/Links.h"
 #import "Player.h"
 
 static const CGFloat kSkipGlyphSize = 32, kFooterGlyphSize = 20;
+// Spotify's Encore queue glyph is drawn larger than the glyphs beside it; this much of its size looks theirs.
+static const CGFloat kEncoreQueueScale = 0.85;
 // Where the four footer glyphs sit, as parts of the footer's width: Lyrics, Connect, Queue, the DJ button.
 static const CGFloat kSlots[4] = {0.2, 0.4, 0.6, 0.8};
 // The DJ button's blue disc is 48pt, a good deal more than the glyphs beside it; drawn this much of that.
 static const CGFloat kDJButtonScale = 0.88;
 static char kPrevKey, kNextKey, kPlayKey, kGlyphKey;
-static char kShareKey, kConnectKey, kDJKey, kQueueKey;
+static char kShareKey, kConnectKey, kDJKey, kQueueKey, kDJMaskKey, kDJGlyphKey;
 
 #pragma mark - previous and next
 
@@ -121,6 +126,40 @@ static SGRGlyphButton *glyphButtonIn(UIView *host, const void *key, NSString *sy
     return button;
 }
 
+// Nothing of `view` drawn, by an empty mask on its layer: Spotify gives the share button and its holder their alpha back
+// after the footer lays out, which the DJ's disc hid until the waveform took its place, and leaves a mask alone.
+static char kEmptyMaskKey;
+static void maskAway(UIView *view) {
+    if (!view) return;
+    CALayer *mask = objc_getAssociatedObject(view, &kEmptyMaskKey);
+    if (!mask) {
+        mask = [CALayer layer];
+        objc_setAssociatedObject(view, &kEmptyMaskKey, mask, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (view.layer.mask != mask) view.layer.mask = mask;
+}
+
+// The DJ button as the Music app's waveform: an empty mask over its holder, so nothing of Spotify's disc is drawn while
+// the button still takes the touches, and the glyph above it, which takes none.
+static void waveformOver(UIView *host, UIView *djHolder) {
+    CALayer *mask = objc_getAssociatedObject(djHolder, &kDJMaskKey);
+    if (!mask) {
+        mask = [CALayer layer];
+        objc_setAssociatedObject(djHolder, &kDJMaskKey, mask, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (djHolder.layer.mask != mask) djHolder.layer.mask = mask;
+    SGRGlyphView *glyph = objc_getAssociatedObject(host, &kDJGlyphKey);
+    if (!glyph) {
+        glyph = [[SGRGlyphView alloc] initWithSymbol:@"waveform" pointSize:kFooterGlyphSize weight:UIImageSymbolWeightRegular];
+        glyph.tintColor = SGRPrimary();
+        objc_setAssociatedObject(host, &kDJGlyphKey, glyph, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (glyph.superview != host) [host addSubview:glyph];
+    else if (host.subviews.lastObject != glyph) [host bringSubviewToFront:glyph];
+    // Where the holder is drawn: its center moved by the transform that places it.
+    glyph.center = CGPointMake(djHolder.center.x + djHolder.transform.tx, djHolder.center.y + djHolder.transform.ty);
+}
+
 #pragma mark the row
 
 static void styleFooter(UIViewController *unit) {
@@ -130,10 +169,14 @@ static void styleFooter(UIViewController *unit) {
     BOOL rtl = host.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
     CGFloat (^slot)(NSUInteger) = ^CGFloat(NSUInteger i) { return round(width * (rtl ? 1 - kSlots[i] : kSlots[i])); };
 
-    // No share button; its holder goes too, since a view that takes touches swallows them with nothing on it.
+    // No share button; its holder goes too, since a view that takes touches swallows them with nothing on it. It sits
+    // under the DJ button, so it is masked away as well as vanished (maskAway).
     UIView *share = SGRFindByIdentifier(host, @"ShareButtonNowPlayingView", &kShareKey);
+    UIView *shareHolder = holderIn(host, share);
     SGRPlayerVanish(share);
-    SGRPlayerVanish(holderIn(host, share));
+    SGRPlayerVanish(shareHolder);
+    maskAway(share);
+    maskAway(shareHolder);
 
     SGRGlyphButton *lyrics = SGRPlayerLyricsGlyphIn(host);
     lyrics.bounds = CGRectMake(0, 0, 44, 44);
@@ -156,6 +199,7 @@ static void styleFooter(UIViewController *unit) {
     });
     queue.bounds = CGRectMake(0, 0, 44, 44);
     queue.center = CGPointMake(slot(2), middleY);
+    if (SGRPlayerSpotifyIcons()) SGRPlayerEncoreGlyphIn(queue, @"queue").transform = CGAffineTransformMakeScale(kEncoreQueueScale, kEncoreQueueScale);
 
     // The DJ button at the last place. Connect's view reaches a long way to the right of its glyph, so the
     // DJ's goes above it in the stack, or Connect would take its touches.
@@ -165,6 +209,7 @@ static void styleFooter(UIViewController *unit) {
         placeHolder(djHolder, djHolder.center.x, slot(3), kDJButtonScale);
         NSArray<UIView *> *order = host.subviews;
         if (connectHolder && [order indexOfObject:djHolder] < [order indexOfObject:connectHolder]) [host bringSubviewToFront:djHolder];
+        if (!SGRPlayerSpotifyIcons()) waveformOver(host, djHolder);
     }
 
     SGRPlayerLowerRow(host);
