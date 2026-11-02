@@ -533,7 +533,8 @@ Redesigned:
                   (BarConnect.x, its own key and its own row on the Player page, apart from the native look's). The card's text is the Music
                   app's, the title over the artists with no device line, drawn inside Spotify's own text on each swipe page
                   so it slides and fades with it; Spotify lays a page out as "title • artists" over the device line or as
-                  title over artists, and both are read. In the minimized row
+                  title over artists, and both are read. Above the bar the card is as wide as the glass bar's row under it
+                  (SGRTabBarGlassRow, 21 pt in from each side where Spotify keeps 8), as the Music app's mini player is. In the minimized row
                   the card drops its device and add buttons, faded out as it heads there and back in as it leaves. Only the title stays in the row. In a Jam the
                   glass stays on the track and Spotify's Jam strip gets a pane of the same glass above it, and the fade under
                   the bars reaches above the strip while the card is above the bar; in the minimized row the card docks as it does outside a Jam and the strip
