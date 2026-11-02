@@ -12,10 +12,6 @@
 // Threading: main thread only; the palette work it starts runs off it.
 #import <UIKit/UIKit.h>
 
-// Posted on the main thread by a field whose color changed, with the field as the object and the
-// new color under "color".
-extern NSNotificationName const SGRFieldColorDidChangeNotification;
-
 @interface SGRArtworkField : UIView
 // Where the color, the fade to black and the backdrop reach past the bounds (overscroll, a plane
 // that does not clip): positive values draw outside. The field never clips.

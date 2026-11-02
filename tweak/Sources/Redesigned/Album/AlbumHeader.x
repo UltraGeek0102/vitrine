@@ -1,7 +1,8 @@
 // Album redesign: the header the Music app gives an album (iOS 26.4), the same one the playlist redesign
 // gives a playlist. The cover runs full bleed across the top of the page and dissolves into the page's
-// color; the title, the artist and the kind and date are centered on the bottom of that dissolve; and under
-// them one row -- shuffle, a white Play capsule, and add.
+// field, stretching when the page is pulled down (the Kit's SGRStretchHero); the title, the artist and the
+// kind and date are centered on the bottom of that dissolve; and under them one row -- shuffle, a white Play
+// capsule, and add.
 //
 // Tree (trees/clean/album/01.txt:39-152). The header is one element of the page's scrolling stack,
 // id=CreativeWorkPlatform.Components.UI.CreativeWorkHeader, a plain UIView whose height the element framework
@@ -30,9 +31,7 @@
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Album.h"
 
-// How much of the cover's height the dissolve into the field covers, and the scrim over the top of it that
-// keeps the status bar and the back button legible on a bright picture. The playlist's numbers: one page.
-static const CGFloat kDissolve = 0.46, kTopScrim = 140, kTopScrimAlpha = 0.28;
+// The dissolve and the scrim are the Kit's stretching hero's (SGRStretchHero.h), the playlist's numbers.
 // A header whose text begins nearer the top than this is one mid load, not one to measure the hero from;
 // and an artwork view narrower than this is a placeholder glyph rather than the cover.
 static const CGFloat kMinHero = 120, kMinCover = 80;
@@ -115,14 +114,19 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
 
 #pragma mark - the cover, full bleed
 
-// The picture across the top of the page with the field showing through the bottom of it. Two gradients
-// rather than a mask or a blur: a scrim over the top for the status bar, and under it a fade from the
-// picture to the very color the page's field is drawing, so the two meet with nothing to see.
-@interface SGRAlbumHero : UIView
+// The picture across the top of the page with the field showing through the bottom of it: the Kit's stretching
+// hero (SGRStretchHero.h), whose bottom is masked away as the playlist's is, under a scrim for the status bar.
+// Pulled down past the top, it grows upward by as much, so the picture stays one piece with the text and the
+// list under it and zooms in, as the Music app's does, rather than sliding down and leaving the field showing
+// above it (issue #169).
+//
+// Here the hero adds the cover square with Full bleed covers off, its shadow, and Apple Music's animated cover,
+// which goes in the hero's masked content over the picture and so dissolves with it.
+@interface SGRAlbumHero : SGRStretchHero
 @property (nonatomic, readonly) UIImageView *picture;
-@property (nonatomic, copy) UIColor *fieldColor;
-// Where Spotify lays its cover square out, in the hero's coordinates. With Full bleed covers off the picture is
-// drawn there instead, on the field with neither gradient, until an animated cover fills the hero over it.
+// Where Spotify lays its cover square out, in the hero's coordinates at rest. With Full bleed covers off the
+// picture is drawn there instead, on the field with no scrim and no mask, until an animated cover fills the
+// hero over it.
 @property (nonatomic) CGRect square;
 // The cover in Spotify's artwork view, and every cover it puts there afterward: the hero keeps itself
 // right, rather than being handed a picture on each of the header's passes and staying empty between them.
@@ -135,8 +139,7 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
 @end
 
 @implementation SGRAlbumHero {
-    CAGradientLayer *_scrim, *_dissolve;
-    CALayer *_shadow;   // under the square, which clips and so cannot cast its own
+    CALayer *_shadow;   // under the square, which clips and so cannot cast its own; beside the masked content
     __weak UIImageView *_cover;
     UIView *_extension;   // iOS 26's UIBackgroundExtensionView around the picture, nil before it
     NSString *_motionAlbum;
@@ -145,17 +148,13 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
     AVPlayerLooper *_looper;
     BOOL _motionOn;   // what the player was last asked, so a scroll's steps ask it nothing again
     BOOL _motionSeen; // whether the hero was on screen when the player was last asked
-    __weak UIScrollView *_list;   // the page's list, watched for the hero scrolling off the screen and back
 }
 
 static void *kReadyContext = &kReadyContext;
-static void *kListContext = &kListContext;
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
-    self.userInteractionEnabled = NO;
-    self.accessibilityElementsHidden = YES;
-    self.clipsToBounds = YES;
+    self.logName = @"album";
 
     _picture = [[UIImageView alloc] initWithFrame:self.bounds];
     _picture.contentMode = UIViewContentModeScaleAspectFill;
@@ -168,29 +167,18 @@ static void *kListContext = &kListContext;
         _extension = [[extension alloc] initWithFrame:self.bounds];
         [_extension setValue:@NO forKey:@"automaticallyPlacesContentView"];
         [_extension setValue:_picture forKey:@"contentView"];
-        [self addSubview:_extension];
+        [self.content addSubview:_extension];
     } else {
         _picture.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [self addSubview:_picture];
+        [self.content addSubview:_picture];
     }
 
-    _scrim = [CAGradientLayer layer];
-    _scrim.zPosition = 1;
-    _scrim.colors = @[(id)[UIColor colorWithWhite:0 alpha:kTopScrimAlpha].CGColor, (id)UIColor.clearColor.CGColor];
-    [self.layer addSublayer:_scrim];
-
-    // At the bottom, under the picture's layer.
+    // At the bottom, under the content's layer.
     _shadow = [CALayer layer];
     _shadow.hidden = YES;
     [self.layer insertSublayer:_shadow atIndex:0];
 
-    _dissolve = [CAGradientLayer layer];
-    _dissolve.zPosition = 2;
-    [self.layer addSublayer:_dissolve];
-    self.fieldColor = SGRNeutralField();
-    // The color is read off the main thread, so it can land after the last layout pass of the page.
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
-    [center addObserver:self selector:@selector(sgr_fieldColorDidChange) name:SGRFieldColorDidChangeNotification object:nil];
     for (NSNotificationName name in @[UIApplicationDidBecomeActiveNotification, UIApplicationWillResignActiveNotification,
                                       NSProcessInfoPowerStateDidChangeNotification, UIAccessibilityReduceMotionStatusDidChangeNotification,
                                       UIAccessibilityVideoAutoplayStatusDidChangeNotification]) {
@@ -201,68 +189,53 @@ static void *kListContext = &kListContext;
 
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
-    [_list removeObserver:self forKeyPath:@"contentOffset" context:kListContext];
     [self sgr_dropMotion];
-}
-
-- (void)sgr_fieldColorDidChange {
-    if (self.superview) self.fieldColor = SGRAlbumFieldColor(self);
-}
-
-- (void)setFieldColor:(UIColor *)color {
-    if (!color || [_fieldColor isEqual:color]) return;
-    _fieldColor = [color copy];
-    // The clear end is the same color with no alpha rather than +clearColor, so the fade keeps its hue
-    // instead of going through gray.
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    _dissolve.colors = @[(id)[color colorWithAlphaComponent:0].CGColor,
-                         (id)[color colorWithAlphaComponent:0.72].CGColor,
-                         (id)color.CGColor];
-    _dissolve.locations = @[@0, @0.62, @1];
-    [CATransaction commit];
 }
 
 - (void)setSquare:(CGRect)square {
     if (CGRectEqualToRect(_square, square)) return;
     _square = square;
-    // A path, so the shadow is drawn from it rather than from an offscreen pass over the layer every frame.
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    _shadow.frame = square;
-    _shadow.shadowPath = [UIBezierPath bezierPathWithRoundedRect:_shadow.bounds cornerRadius:kSquareRadius].CGPath;
-    [CATransaction commit];
+    // A path, so the shadow is drawn from it rather than from an offscreen pass over the layer every frame. In the
+    // layer's own coordinates, so it holds wherever -layoutSubviews puts the layer.
+    _shadow.shadowPath = [UIBezierPath bezierPathWithRoundedRect:(CGRect){CGPointZero, square.size} cornerRadius:kSquareRadius].CGPath;
     [self setNeedsLayout];
 }
 
 - (void)layoutSubviews {
+    // A square cover's mask follows whether a clip covers the whole hero: the square itself reaches into the
+    // dissolve, so only a clip is masked. Set before the Kit lays the content out, so both land in one pass.
+    BOOL full = SGRFullBleedCovers(), bleeds = _motion.opacity == 1;
+    self.dissolves = full || bleeds;
     [super layoutSubviews];
     CGRect bounds = self.bounds;
+    if (bounds.size.height < 1) return;
+    // Pulled down, the hero is `stretch` taller than at rest and as much higher in the header, so what sits on
+    // the content -- the square, the picture's bottom -- is placed from the rest height and moved down by the
+    // stretch, and the picture over it grows by the same.
+    CGFloat stretch = self.stretch, rest = bounds.size.height - stretch;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    if (SGRFullBleedCovers()) {
+    if (full) {
         if (_extension) {
             _extension.frame = bounds;
-            CGFloat side = MIN(bounds.size.width, bounds.size.height);
-            _picture.frame = CGRectMake(0, 0, bounds.size.width, side);
+            // Scaled about its middle by as much as its bottom moves down: zoomed in, never cut off.
+            CGFloat side = MIN(bounds.size.width, rest), width = bounds.size.width * (side + stretch) / side;
+            _picture.frame = CGRectMake((bounds.size.width - width) / 2, 0, width, side + stretch);
         }
     } else {
         // Stays square under an animated cover too: the clip covers the whole hero, so nothing moves under its fade.
+        CGRect square = CGRectOffset(_square, 0, stretch);
         UIView *holder = _extension ?: _picture;
-        holder.frame = _square;
+        holder.frame = square;
         holder.layer.cornerRadius = kSquareRadius;
         holder.layer.cornerCurve = kCACornerCurveContinuous;
         holder.clipsToBounds = YES;
         if (_extension) _picture.frame = _extension.bounds;
-        BOOL bleeds = _motion.opacity == 1;
+        _shadow.frame = square;
         _shadow.hidden = bleeds;
-        _scrim.hidden = !bleeds;
-        _dissolve.hidden = !bleeds;
+        self.scrim.hidden = !bleeds;
     }
     _motion.frame = bounds;
-    _scrim.frame = CGRectMake(0, 0, bounds.size.width, MIN(kTopScrim, bounds.size.height));
-    CGFloat fade = round(bounds.size.height * kDissolve);
-    _dissolve.frame = CGRectMake(0, bounds.size.height - fade, bounds.size.width, fade);
     [CATransaction commit];
 }
 
@@ -281,9 +254,9 @@ static void *kListContext = &kListContext;
     });
 }
 
-// Muted and looping, over the picture and under the two gradients. The picture stays under it until the
-// first frame is decoded, and only then does the clip fade in: a fade started at once was spent on a layer
-// with nothing in it, and the clip cut in after it.
+// Muted and looping, over the picture in the hero's masked content and under the scrim. The picture stays
+// under it until the first frame is decoded, and only then does the clip fade in: a fade started at once was
+// spent on a layer with nothing in it, and the clip cut in after it.
 - (void)showMotion:(NSURL *)file {
     AVPlayerItem *item = [AVPlayerItem playerItemWithURL:file];
     _player = [AVQueuePlayer new];
@@ -298,10 +271,9 @@ static void *kListContext = &kListContext;
     _motion.zPosition = 0.5;
     _motion.frame = self.bounds;
     _motion.opacity = 0;
-    [self.layer addSublayer:_motion];
+    [self.content.layer addSublayer:_motion];
     [_motion addObserver:self forKeyPath:@"readyForDisplay" options:NSKeyValueObservingOptionInitial context:kReadyContext];
     _motionOn = NO;
-    [self sgr_watchList];
     [self sgr_updateMotion];
     SGLog(@"redesign album: animated cover %@", file.lastPathComponent);
 }
@@ -310,18 +282,17 @@ static void *kListContext = &kListContext;
     [_motion removeObserver:self forKeyPath:@"readyForDisplay" context:kReadyContext];
     [_motion removeFromSuperlayer];
     _motion = nil;
-    // A square cover's gradients and shadow follow whether a clip covers it.
+    // A square cover's scrim, mask and shadow follow whether a clip covers it.
     if (!SGRFullBleedCovers()) [self setNeedsLayout];
 }
 
+// The Kit watches the page's list for the pull; on the same steps, with a clip, whether the hero has left the
+// screen or come back to it. A hero with no clip, which most album pages have, costs the scroll nothing more.
+- (void)listDidScroll {
+    if (_player && [self sgr_seen] != _motionSeen) [self sgr_updateMotion];
+}
+
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
-    if (context == kListContext) {
-        // Only whether the hero is on screen moves while the list scrolls.
-        BOOL seen = [self sgr_seen];
-        if (seen == _motionSeen) return;
-        [self sgr_updateMotion];
-        return;
-    }
     if (context != kReadyContext) {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
         return;
@@ -337,17 +308,23 @@ static void *kListContext = &kListContext;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     layer.opacity = 1;
-    // A square cover's hero has no gradients until the clip fills it; they come in with it.
-    NSArray<CALayer *> *fading = SGRFullBleedCovers() ? @[layer] : @[layer, _scrim, _dissolve];
-    _scrim.hidden = NO;
-    _dissolve.hidden = NO;
+    // A square cover's hero has no scrim and no mask until the clip fills it. Its layout pass, run now, gives it
+    // both, and they come in with the clip, the mask from opaque all the way down, so the square under the clip
+    // is not cut into as it fades in.
+    BOOL square = !SGRFullBleedCovers();
+    if (square) {
+        [self setNeedsLayout];
+        [self layoutIfNeeded];
+    }
     if (self.window) {
+        CAMediaTimingFunction *curve = [CAMediaTimingFunction functionWithControlPoints:0.23 :1 :0.32 :1];
         CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
         fade.fromValue = @0;
         fade.toValue = @1;
         fade.duration = 0.2;
-        fade.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.23 :1 :0.32 :1];
-        for (CALayer *each in fading) [each addAnimation:fade forKey:@"fade"];
+        fade.timingFunction = curve;
+        for (CALayer *each in square ? @[layer, self.scrim] : @[layer]) [each addAnimation:fade forKey:@"fade"];
+        if (square) [self revealDissolveOver:fade.duration curve:curve];
     }
     [CATransaction commit];
 }
@@ -377,23 +354,8 @@ static void *kListContext = &kListContext;
     else [_player pause];
 }
 
-// The hero scrolls with the header, so the page's list is where its leaving the screen is heard: its offset,
-// watched while the hero has a clip and is in a window, and let go when either goes. A hero with no clip, which
-// every album page has, costs the scroll nothing.
-- (void)sgr_watchList {
-    UIScrollView *list = nil;
-    for (UIView *v = _player && self.window ? self.superview : nil; v && !list; v = v.superview) {
-        if ([v isKindOfClass:UIScrollView.class]) list = (UIScrollView *)v;
-    }
-    if (list == _list) return;
-    [_list removeObserver:self forKeyPath:@"contentOffset" context:kListContext];
-    _list = list;
-    [list addObserver:self forKeyPath:@"contentOffset" options:0 context:kListContext];
-}
-
 - (void)didMoveToWindow {
     [super didMoveToWindow];
-    [self sgr_watchList];
     [self sgr_updateMotion];
 }
 
@@ -458,8 +420,8 @@ static UIImageView *coverImageIn(UIView *cover) {
 }
 
 // The picture runs from the top of the header down past where its text begins, so the title and the artist
-// sit on the bottom of its dissolve; below that the page's field is already drawing the very color the
-// picture dissolves into, so there is no seam to see.
+// sit on the bottom of its dissolve; the dissolve is a mask, so what shows through it is the page's field at
+// that height, whatever color it is there, pulled down or not, and there is no seam to see.
 //
 // `bottom` is taken from the header at rest, never from where it is mid scroll, and only ever grows: a header
 // still loading is shorter than it will end up, and once the cover and the artist are in it settles and the
@@ -480,8 +442,8 @@ static void applyHero(UIView *header, UIView *cover, CGFloat bottom) {
         SGLog(@"redesign album: hero %.0fpt across the top of the header", height);
     }
     if (height < kMinHero) return;
-    setFrame(hero, CGRectMake(0, 0, header.bounds.size.width, height));
-    hero.fieldColor = SGRAlbumFieldColor(header);
+    hero.restHeight = height;
+    [hero sgr_place];
     // Spotify's square at full size, in the header's coordinates, which are the hero's: grow-only like the height,
     // so the square stays put while the header fades and collapses. Its bottom too, since the cover can reach its
     // full size before the header's top inset is in.

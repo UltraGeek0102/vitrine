@@ -1,6 +1,7 @@
 // Artist redesign: the header the playlist and album pages have. The photo runs full bleed across the top
-// of the page and dissolves into the page's color; the name and the monthly listeners are centered on the
-// bottom of that dissolve; and under them one row -- shuffle, a white Play capsule, and Follow.
+// of the page and dissolves into the page's field, stretching when the page is pulled down (the Kit's
+// SGRStretchHero); the name and the monthly listeners are centered on the bottom of that dissolve; and under
+// them one row -- shuffle, a white Play capsule, and Follow.
 //
 // Tree (trees/clean/artist/01.txt:37-170). The header is TemplateKit's HeaderContainer, 568pt, the first view
 // of the page's stack, holding an element view that holds the ImageHeaderView:
@@ -33,9 +34,7 @@
 #import "Redesigned/Album/Album.h"
 #import "Artist.h"
 
-// How much of the photo's height the dissolve into the field covers, and the scrim over the top of it that
-// keeps the status bar and the back button legible on a bright picture. The playlist's and the album's.
-static const CGFloat kDissolve = 0.46, kTopScrim = 140, kTopScrimAlpha = 0.28;
+// The dissolve and the scrim are the Kit's stretching hero's (SGRStretchHero.h), the playlist's and the album's.
 // A photo view narrower than this is a placeholder glyph, and a picture shorter than this one mid load.
 static const CGFloat kMinCover = 80, kMinHero = 120;
 // The collapsed ImageHeaderView, Spotify's navigation bar; the text fades out over the last kFade before it.
@@ -101,11 +100,13 @@ static UIView *containerOf(UIView *header) {
 
 #pragma mark - the photo, full bleed
 
-// The picture across the top of the page with the field showing through the bottom of it: a scrim over the
-// top for the status bar, and under it a fade to the very color the page's field is drawing.
-@interface SGRArtistHero : UIView
+// The picture across the top of the page with the field showing through the bottom of it: the Kit's stretching
+// hero (SGRStretchHero.h), whose bottom is masked away as the playlist's and the album's are, under a scrim for
+// the status bar. Pulled down past the top, it grows upward by as much, so the photo stays one piece with the
+// name and the list under it and zooms in, as the Music app's does, rather than sliding down and leaving the
+// field showing above it (issue #169). The photo fills the hero's content, so a pull only resizes it.
+@interface SGRArtistHero : SGRStretchHero
 @property (nonatomic, readonly) UIImageView *picture;
-@property (nonatomic, copy) UIColor *fieldColor;
 // The photo in Spotify's artwork view, and every photo it puts there afterward: the hero keeps itself
 // right, rather than being handed a picture on each of the header's passes and staying empty between them.
 // The same view again only re-reads it.
@@ -113,67 +114,18 @@ static UIView *containerOf(UIView *header) {
 @end
 
 @implementation SGRArtistHero {
-    CAGradientLayer *_scrim, *_dissolve;
     __weak UIImageView *_artwork;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
-    self.userInteractionEnabled = NO;
-    self.accessibilityElementsHidden = YES;
-    self.clipsToBounds = YES;
-
+    self.logName = @"artist";
     _picture = [[UIImageView alloc] initWithFrame:self.bounds];
     _picture.contentMode = UIViewContentModeScaleAspectFill;
     _picture.clipsToBounds = YES;
     _picture.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [self addSubview:_picture];
-
-    _scrim = [CAGradientLayer layer];
-    _scrim.zPosition = 1;
-    _scrim.colors = @[(id)[UIColor colorWithWhite:0 alpha:kTopScrimAlpha].CGColor, (id)UIColor.clearColor.CGColor];
-    [self.layer addSublayer:_scrim];
-
-    _dissolve = [CAGradientLayer layer];
-    _dissolve.zPosition = 2;
-    [self.layer addSublayer:_dissolve];
-    self.fieldColor = SGRNeutralField();
-    // The color is read off the main thread, so it can land after the last layout pass of the page.
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sgr_fieldColorDidChange)
-                                               name:SGRFieldColorDidChangeNotification object:nil];
+    [self.content addSubview:_picture];
     return self;
-}
-
-- (void)dealloc {
-    [NSNotificationCenter.defaultCenter removeObserver:self];
-}
-
-- (void)sgr_fieldColorDidChange {
-    if (self.superview) self.fieldColor = SGRArtistFieldColor(self);
-}
-
-- (void)setFieldColor:(UIColor *)color {
-    if (!color || [_fieldColor isEqual:color]) return;
-    _fieldColor = [color copy];
-    // The clear end is the same color with no alpha, so the fade keeps its hue instead of going through gray.
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    _dissolve.colors = @[(id)[color colorWithAlphaComponent:0].CGColor,
-                         (id)[color colorWithAlphaComponent:0.72].CGColor,
-                         (id)color.CGColor];
-    _dissolve.locations = @[@0, @0.62, @1];
-    [CATransaction commit];
-}
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    CGRect bounds = self.bounds;
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    _scrim.frame = CGRectMake(0, 0, bounds.size.width, MIN(kTopScrim, bounds.size.height));
-    CGFloat fade = round(bounds.size.height * kDissolve);
-    _dissolve.frame = CGRectMake(0, bounds.size.height - fade, bounds.size.width, fade);
-    [CATransaction commit];
 }
 
 - (void)followArtwork:(UIImageView *)source {
@@ -220,7 +172,7 @@ static UIImageView *photoIn(UIView *artwork) {
 
 // The picture from the top of the container down to `bottom`, which comes from the container at rest and only
 // ever grows, so it does not change size while the page loads or scrolls.
-static void applyHero(UIView *container, UIView *artwork, CGFloat bottom, UIColor *fieldColor) {
+static void applyHero(UIView *container, UIView *artwork, CGFloat bottom) {
     SGRArtistHero *hero = objc_getAssociatedObject(container, &kHeroKey);
     if (!hero) {
         hero = [[SGRArtistHero alloc] initWithFrame:CGRectZero];
@@ -236,8 +188,8 @@ static void applyHero(UIView *container, UIView *artwork, CGFloat bottom, UIColo
         SGLog(@"redesign artist: hero %.0fpt across the top of the page", height);
     }
     if (height < kMinHero) return;
-    setFrame(hero, CGRectMake(0, 0, container.bounds.size.width, height));
-    hero.fieldColor = fieldColor;
+    hero.restHeight = height;
+    [hero sgr_place];
     [hero followArtwork:photoIn(artwork)];
 }
 
@@ -318,11 +270,17 @@ static void applyHeader(UIView *header, BOOL full) {
     if (fabs(info.alpha - alpha) > 0.01) info.alpha = alpha;
 
     // The picture reaches to where the content's top is at rest, plus the name. The container keeps its
-    // height as the header collapses, and only ever grows as the page loads.
-    CGFloat rest = MAX([objc_getAssociatedObject(container, &kContainerHeightKey) doubleValue], container.bounds.size.height);
-    objc_setAssociatedObject(container, &kContainerHeightKey, @(rest), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // height as the header collapses, and only ever grows as the page loads. Not while the page is pulled down
+    // past its top: should Spotify grow the container with the pull, that height is not the rest, and the hero
+    // would stay that much too tall once the page is let go.
+    CGFloat rest = [objc_getAssociatedObject(container, &kContainerHeightKey) doubleValue];
+    SGRArtistHero *hero = objc_getAssociatedObject(container, &kHeroKey);
+    if (container.bounds.size.height > rest && hero.pull <= 0) {
+        rest = container.bounds.size.height;
+        objc_setAssociatedObject(container, &kContainerHeightKey, @(rest), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
     CGFloat bottom = rest - SGRHeaderInfoBottom - [info contentHeightForWidth:container.bounds.size.width] + SGRHeaderInfoTitleRise;
-    applyHero(container, artwork, bottom, fieldColor);
+    applyHero(container, artwork, bottom);
 }
 
 // What the header shows besides its text: the logo, the buttons, More, and the watch on the buttons' row.

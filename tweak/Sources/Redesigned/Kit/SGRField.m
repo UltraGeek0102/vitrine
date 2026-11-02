@@ -6,8 +6,6 @@
 #import "SGRPalette.h"
 #import "SGRTokens.h"
 
-NSNotificationName const SGRFieldColorDidChangeNotification = @"spotifyglass.redesign.fieldColorDidChange";
-
 static const CGFloat kFallbackHeight = 874;   // a window-less field sizes for an iPhone 17 Pro
 
 // Where the color starts fading to black and where it is black, as shares of the window's height:
@@ -251,7 +249,6 @@ const NSTimeInterval SGRFieldHoldLimit = 1.0;
         fade.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
         [_solid addAnimation:fade forKey:@"backgroundColor"];
     }
-    [NSNotificationCenter.defaultCenter postNotificationName:SGRFieldColorDidChangeNotification object:self userInfo:@{@"color": color}];
 }
 
 - (void)setProvisionalColor:(UIColor *)color {
