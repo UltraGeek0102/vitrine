@@ -121,6 +121,13 @@ static SGLyricsResult *resultFrom(NSDictionary *record, NSArray<SGKaraokeLine *>
     return SGLyricsPlainResult([plain componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]);
 }
 
+// A record's length in whole seconds, 0 when it has none. The JSON can carry `"duration": null`, and NSNull
+// answers no doubleValue.
+static NSInteger lengthOf(NSDictionary *record) {
+    id duration = record[@"duration"];
+    return [duration respondsToSelector:@selector(doubleValue)] ? (NSInteger)[duration doubleValue] : 0;
+}
+
 // How good a recording is for the track: words timed beat lines timed, which beat untimed, then the
 // closest length. With no length to go on, the fullest sheet wins — the search will happily rank a
 // seventeen second stub of a song above the song, and a stub is the one thing a length would have
@@ -133,8 +140,10 @@ static BOOL betterRecord(NSDictionary *record, NSDictionary *best, NSInteger sec
     BOOL wasSynced = [best[@"syncedLyrics"] isKindOfClass:NSString.class] && [best[@"syncedLyrics"] length];
     if (synced != wasSynced) return synced;
     if (seconds > 0) {
-        NSInteger off = labs((NSInteger)[record[@"duration"] doubleValue] - seconds);
-        NSInteger wasOff = labs((NSInteger)[best[@"duration"] doubleValue] - seconds);
+        // A record without a length is the farthest off: nothing says it is not a stub.
+        NSInteger length = lengthOf(record), wasLength = lengthOf(best);
+        NSInteger off = length > 0 ? labs(length - seconds) : NSIntegerMax;
+        NSInteger wasOff = wasLength > 0 ? labs(wasLength - seconds) : NSIntegerMax;
         return off < wasOff;
     }
     NSString *text = record[@"syncedLyrics"] ?: record[@"plainLyrics"] ?: @"";
@@ -149,7 +158,7 @@ static NSArray<NSDictionary *> *matching(id found, SGLyricsQuery *query) {
     NSMutableArray<NSDictionary *> *records = [NSMutableArray array];
     for (NSDictionary *record in [found isKindOfClass:NSArray.class] ? found : @[]) {
         if (![record isKindOfClass:NSDictionary.class]) continue;
-        NSInteger length = (NSInteger)[record[@"duration"] doubleValue];
+        NSInteger length = lengthOf(record);
         if (query.seconds > 0 && length > 0 && labs(length - query.seconds) > kLengthSlack) continue;
         NSString *artists = [record[@"artistName"] isKindOfClass:NSString.class] ? record[@"artistName"] : @"";
         if (!SGLyricsSongRank(query.title, query.artist, record[@"trackName"], @[artists])) continue;
